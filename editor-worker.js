@@ -3,6 +3,7 @@ const colors = {
   text: '#fff',
   caret: '#77f',
   gutter: '#333',
+  scrollbar: '#555',
   lineNumbers: '#888'
 }
 
@@ -60,7 +61,7 @@ class Editor {
     this.lines = []
 
     this.setText(this.setup.toString())
-    this.setCaret({ col: 3, line: 40, align: 0 })
+    this.setCaret({ col: this.lines[27].length, line: 27, align: 0 })
     this.keepCaretInView()
     this.draw()
   }
@@ -250,6 +251,45 @@ class Editor {
     )
   }
 
+  drawScrollbars () {
+    // draw scrollbars
+    this.ctx.outer.fillStyle = colors.scrollbar
+
+    const horiz =
+      this.canvas.width
+    / this.canvas.text.width
+    * this.canvas.width
+
+    const vert =
+      this.canvas.height
+    / (this.canvas.text.height - this.canvas.overscrollHeight / this.canvas.pixelRatio)
+    * this.canvas.height
+
+    this.ctx.outer.fillRect(
+      this.canvas.gutter.width
+    - (this.pos.x / this.canvas.pixelRatio)
+    * (horiz
+    / (this.canvas.width
+    - this.canvas.gutter.width
+    - (this.canvas.padding * 2
+    + this.char.width * 2)
+    * this.canvas.pixelRatio)),
+      this.canvas.height - 12,
+      horiz + 1,
+      12
+    )
+
+    this.ctx.outer.fillRect(
+      this.canvas.width - 12,
+    - (this.pos.y / this.canvas.pixelRatio)
+    * (vert
+    / (this.canvas.height + vert
+    + (this.canvas.padding * 2))),
+      12,
+      vert + 1
+    )
+  }
+
   drawGutter () {
     // draw gutter layer
     this.ctx.outer.drawImage(
@@ -269,6 +309,7 @@ class Editor {
     cancelAnimationFrame(this.animFrame)
     this.animFrame = requestAnimationFrame(() => {
       this.clear()
+      this.drawScrollbars()
       this.drawText()
       this.drawCaret()
       this.drawGutter()
