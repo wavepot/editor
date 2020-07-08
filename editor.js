@@ -2,6 +2,8 @@ const outer = document.getElementById('outer')
 const pixelRatio = window.devicePixelRatio
 const width = 200
 const height = 100
+// const width = window.innerWidth
+// const height = window.innerHeight
 outer.width = width * pixelRatio
 outer.height = height * pixelRatio
 outer.style.width = `${width}px`
@@ -27,16 +29,35 @@ const mouseEvent = e => {
   }
 }
 
-const mouseEventHandlers = [
-  'onmousewheel',
-  'onmousedown'
-].map(eventName => {
+const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+
+const keyEvent = ({
+  key,
+  which,
+  altKey,
+  shiftKey,
+  ctrlKey,
+  metaKey
+}) => ({
+  key,
+  which,
+  char: String.fromCharCode(which),
+  altKey,
+  shiftKey,
+  ctrlKey,
+  metaKey,
+  cmdKey: isMac ? metaKey : ctrlKey
+})
+
+const windowEvent = e => ({})
+
+const handlerMapper = fn => eventName => {
   const handler = e => {
     e.preventDefault()
     e.stopPropagation()
     worker.postMessage({
       call: eventName,
-      ...mouseEvent(e)
+      ...fn(e)
     })
   }
   window.addEventListener(
@@ -45,4 +66,20 @@ const mouseEventHandlers = [
     { passive: false }
   )
   return handler
-})
+}
+
+const windowEventHandlers = [
+  'onblur',
+  'onfocus',
+  'onresize'
+].map(handlerMapper(windowEvent))
+
+const keyEventHandlers = [
+  'onkeydown',
+  'onkeyup',
+].map(handlerMapper(keyEvent))
+
+const mouseEventHandlers = [
+  'onmousewheel',
+  'onmousedown'
+].map(handlerMapper(mouseEvent))
