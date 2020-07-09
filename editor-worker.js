@@ -27,7 +27,7 @@ class Editor {
     const { pixelRatio } = data
     const { width, height } = data.outerCanvas
 
-    this.canvas = { width, height, pixelRatio, padding: 10 }
+    this.canvas = { width, height, pixelRatio, padding: 3 }
     this.canvas.outer = data.outerCanvas
     this.canvas.gutter = new OffscreenCanvas(width, height)
     this.canvas.text = new OffscreenCanvas(width, height)
@@ -61,8 +61,7 @@ class Editor {
     this.lines = []
 
     this.setText(this.setup.toString())
-    // this.setCaret({ col: this.lines[27].length, line: 55, align: 0 })
-    this.setCaret({ col: 0 /*this.lines[27].length*/, line: 27, align: 0 })
+    this.setCaret({ col: 0, line: 0, align: 0 })
     this.keepCaretInView()
     this.draw()
   }
