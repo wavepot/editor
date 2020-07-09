@@ -338,7 +338,7 @@ Buffer.prototype.getLineOffset = function(y) {
   return offset;
 };
 
-Buffer.prototype.getLongestLine = function() {
+Buffer.prototype.getLongestLineLength = function() {
   // TODO: this should be part of the 'Parts' class
   // so lookup becomes O(1), currently lookup is O(n)
   var max = 0, diff = 0, prev = 0, curr = 0

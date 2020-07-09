@@ -56,8 +56,10 @@ class Editor {
 
     this.gutter = { padding: 3 }
 
-    this.line = { padding: 2 }
+    this.line = { padding: 3 }
     this.line.height = this.char.height + this.line.padding
+
+    this.sizes = { loc: -1, longestLineLength: -1 }
 
     this.tabSize = 2
 
@@ -129,6 +131,7 @@ class Editor {
 
     if (!(hasRightSymbol && ['}',']',')'].includes(text))) {
       length = this.buffer.insert(this.caret.pos, text, null, true)
+      this.updateSizes()
     }
 
     this.moveByChars(length)
@@ -141,8 +144,11 @@ class Editor {
   }
 
   backspace () {
-    let { col, line } = this.caret
-    this.lines[line] = lineText.slice(0, col)
+    if (this.isBeginOfFile()) return
+    this.moveByChars(-1)
+    this.buffer.removeCharAtPoint(this.caret.pos)
+    this.updateSizes()
+    this.updateText()
   }
 
   getPointTabs ({ x, y }) {
@@ -223,7 +229,7 @@ class Editor {
     } else if (dx > 0) { // going right
       x += dx // move right
       while (x - this.buffer.getLineLength(y) > 0) { // while past line length
-        if (y === this.buffer.loc()) { // on end of file
+        if (y === this.sizes.loc) { // on end of file
           x = this.buffer.getLineLength(y) // go to end of line on last line
           break // and exit
         }
@@ -246,10 +252,10 @@ class Editor {
         y = 0
       }
     } else if (dy > 0) { // going down
-      if (y < this.buffer.loc() - dy) { // when lines below
+      if (y < this.sizes.loc - dy) { // when lines below
         y += dy // move down
       } else {
-        y = this.buffer.loc()
+        y = this.sizes.loc
       }
     }
 
@@ -283,7 +289,7 @@ class Editor {
   }
 
   moveEndOfFile () {
-    const y = this.buffer.loc()
+    const y = this.sizes.loc
     const x = this.buffer.getLine(y).length
     this.caret.align = x
     return this.moveCaret({ x, y })
@@ -295,7 +301,7 @@ class Editor {
 
   isEndOfFile () {
     const { x, y } = this.caret.pos
-    const last = this.buffer.loc()
+    const last = this.sizes.loc
     return y === last && x === this.buffer.getLineLength(last)
   }
 
@@ -344,35 +350,32 @@ class Editor {
     const { tabs, remainder } = this.getPointTabs(this.caret.pos)
     this.caret.px.set({
       x: this.char.width * (this.caret.pos.x + tabs * this.tabSize - remainder) + this.gutter.padding - 1,
-      y: this.line.height * this.caret.pos.y + this.canvas.padding - this.line.padding - 1
+      y: this.line.height * this.caret.pos.y + this.canvas.padding - this.line.padding - .5
     })
   }
 
   setText (text) {
-    const prevLinesLength = this.lines.length
-
     this.buffer.setText(text)
+    if (this.updateSizes()) this.updateText()
+  }
 
-    this.text = text
-    this.lines = lines(this.text)
+  updateSizes () {
+    let changed = false
 
-    this.longestLineLength = this.buffer.getLongestLine()
+    const loc = this.buffer.loc()
+    const longestLineLength = this.buffer.getLongestLineLength()
 
-    this.gutter.size = (1 + this.buffer.loc()).toString().length
-    this.gutter.width = this.gutter.size * this.char.width + this.gutter.padding
+    if (loc !== this.sizes.loc) {
+      changed = true
+      this.sizes.loc = loc
+      this.gutter.size = (1 + this.sizes.loc).toString().length
+      this.gutter.width = this.gutter.size * this.char.width + this.gutter.padding
 
-    this.canvas.text.width = (
-      this.longestLineLength
-    * this.char.width
-    + this.gutter.padding
-    ) * this.canvas.pixelRatio
+      this.canvas.text.height =
+        (this.canvas.padding * this.canvas.pixelRatio)
+      + ((1 + this.sizes.loc) * this.line.height)
+      * this.canvas.pixelRatio
 
-    this.canvas.text.height =
-      (this.canvas.padding * this.canvas.pixelRatio)
-    + (this.lines.length * this.line.height)
-    * this.canvas.pixelRatio
-
-    if (prevLinesLength !== this.lines.length) {
       this.canvas.overscrollHeight =
         this.canvas.text.height
       - (this.line.height + this.line.padding) * this.canvas.pixelRatio
@@ -388,17 +391,30 @@ class Editor {
       this.updateGutter()
     }
 
-    this.canvas.overscrollWidth =
-      Math.max(
-        0,
-        this.canvas.text.width
-      - this.canvas.width
-      + this.canvas.gutter.width
-      + this.char.width * 2 * this.canvas.pixelRatio
-      )
+    if (longestLineLength !== this.sizes.longestLineLength) {
+      changed = true
+      this.sizes.longestLineLength = longestLineLength
 
-    this.ctx.text.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
-    this.updateText()
+      this.canvas.text.width = (
+        this.sizes.longestLineLength
+      * this.char.width
+      + this.gutter.padding
+      ) * this.canvas.pixelRatio
+
+      this.canvas.overscrollWidth =
+        Math.max(
+          0,
+          this.canvas.text.width
+        - this.canvas.width
+        + this.canvas.gutter.width
+        + this.char.width * 2 * this.canvas.pixelRatio
+        )
+    }
+
+    if (changed) {
+      this.ctx.text.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
+      return true
+    }
   }
 
   hasKeys (keys) {
@@ -415,7 +431,7 @@ class Editor {
 
   applyFont (ctx) {
     ctx.textBaseline = 'top'
-    ctx.font = 'normal 9pt Liberation Mono'
+    ctx.font = 'normal 8.78pt Liberation Mono'
   }
 
   updateGutter () {
@@ -426,7 +442,7 @@ class Editor {
     gutter.fillRect(0, 0, this.canvas.gutter.width, this.canvas.gutter.height)
     gutter.fillStyle = colors.lineNumbers
 
-    for (let i = 0, y = 0; i <= this.buffer.loc(); i++) {
+    for (let i = 0, y = 0; i <= this.sizes.loc; i++) {
       y = this.canvas.padding + i * this.line.height
       gutter.fillText(
         (1 + i).toString().padStart(this.gutter.size),
@@ -443,7 +459,7 @@ class Editor {
     text.clearRect(0, 0, this.canvas.text.width, this.canvas.text.height)
     text.fillStyle = colors.text
 
-    let y = 0, loc = this.buffer.loc()
+    let y = 0, loc = this.sizes.loc
     for (let i = 0; i <= loc; i++) {
       y = this.canvas.padding + i * this.line.height
 
@@ -497,7 +513,7 @@ class Editor {
 
   drawScrollbars () {
     // draw scrollbars
-    const scrollbar = { width: 40 }
+    const scrollbar = { width: 10 }
     scrollbar.margin = scrollbar.width / 2 / 2
 
     this.ctx.outer.strokeStyle = colors.scrollbar
@@ -586,7 +602,7 @@ class Editor {
     const lineNumber = Math.max(
       1,
       Math.min(
-        this.lines.length,
+        this.sizes.loc,
         Math.floor(
           (clientY - (this.pos.y / 2 + this.canvas.padding))
         / this.line.height
@@ -607,6 +623,7 @@ class Editor {
     if (this.key) return this.insert(this.key)
     if (e.key === 'Enter') return this.insert('\n')
     if (e.key === 'Tab') return this.insert(' '.repeat(this.tabSize))
+    if (e.key === 'Backspace') return this.backspace()
 
     this.pressed = [e.cmdKey && 'Cmd', e.key].filter(Boolean).join(' ')
 
