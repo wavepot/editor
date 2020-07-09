@@ -27,7 +27,7 @@ class Editor {
     const { pixelRatio } = data
     const { width, height } = data.outerCanvas
 
-    this.canvas = { width, height, pixelRatio, padding: 5 }
+    this.canvas = { width, height, pixelRatio, padding: 10 }
     this.canvas.outer = data.outerCanvas
     this.canvas.gutter = new OffscreenCanvas(width, height)
     this.canvas.text = new OffscreenCanvas(width, height)
@@ -62,7 +62,7 @@ class Editor {
 
     this.setText(this.setup.toString())
     // this.setCaret({ col: this.lines[27].length, line: 55, align: 0 })
-    this.setCaret({ col: this.lines[27].length, line: 27, align: 0 })
+    this.setCaret({ col: 0 /*this.lines[27].length*/, line: 27, align: 0 })
     this.keepCaretInView()
     this.draw()
   }
@@ -127,7 +127,7 @@ class Editor {
     ) * this.canvas.pixelRatio
 
     this.canvas.text.height =
-      (this.canvas.padding * 2)
+      (this.canvas.padding * this.canvas.pixelRatio)
     + (this.lines.length * this.line.height)
     * this.canvas.pixelRatio
 
@@ -260,24 +260,27 @@ class Editor {
       width:
         this.canvas.text.width
       + this.char.width * 2 * this.canvas.pixelRatio,
-      height: this.canvas.overscrollHeight
+      height:
+        this.canvas.text.height
+      // + this.line.height * this.canvas.pixelRatio
+      // - this.canvas.padding * 2 * this.canvas.pixelRatio
     }
 
     const scale = {
       width: view.width / area.width,
-      height: Math.min(1, view.height / area.height)
+      height: view.height / area.height //Math.min(1, view.height / area.height)
     }
 
     scrollbar.horiz = scale.width * view.width
-    scrollbar.vert = scale.height * view.height
+    scrollbar.vert = scale.height * view.height + (scale.height * (this.canvas.padding - (this.line.height - this.line.padding) * this.canvas.pixelRatio))
 
     const x =
     - (this.pos.x / this.canvas.overscrollWidth)
     * (view.width - scrollbar.horiz) || 0
 
     const y =
-    - (this.pos.y / area.height)
-    * ((view.height - scrollbar.vert) || view.height / 2)
+    - (this.pos.y / this.canvas.overscrollHeight)
+    * Math.max((view.height - scrollbar.vert), view.height / 2)
 
     if (x + view.width - scrollbar.horiz > 12) {
       this.ctx.outer.beginPath()
@@ -286,7 +289,7 @@ class Editor {
       this.ctx.outer.stroke()
     }
 
-    if (y + view.height - scrollbar.vert > 2) {
+    if ((scale.height >= 1 && y > 2) || scale.height < 1) {
       this.ctx.outer.beginPath()
       this.ctx.outer.moveTo(this.canvas.width - scrollbar.margin, y)
       this.ctx.outer.lineTo(this.canvas.width - scrollbar.margin, y + scrollbar.vert)
