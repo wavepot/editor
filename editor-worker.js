@@ -22,6 +22,7 @@ const parse = (regexp, text) => {
   return words
 }
 
+const NEWLINE = Regexp.create(['newline'])
 const WORDS = Regexp.create(['words'], 'g')
 
 class Editor {
@@ -93,16 +94,50 @@ class Editor {
     this.draw()
   }
 
-  insertChar (key) {
-    let { col, line, align } = this.caret
-    let lineText = this.lines[line]
-    lineText = lineText.slice(0, col) + key + lineText.slice(col)
-    align = ++col
-    this.lines[line] = lineText
-    this.setText(this.lines.join('\n'))
-    this.setCaret({ col, line, align })
-    this.keepCaretInView()
-    this.draw()
+  insert (text) {
+    // if (this.mark.active) this.delete();
+
+    // this.emit('input', text, this.caret.copy(), this.mark.copy(), this.mark.active);
+
+    const line = this.buffer.getLineText(this.caret.pos.y)
+    const right = line[this.caret.pos.x]
+    const hasRightSymbol = ['}',']',')'].includes(right)
+
+    let indent = 0
+    let hasLeftSymbol
+
+    // apply indent on enter
+    if (NEWLINE.test(text)) {
+      const left = line[this.caret.pos.x - 1]
+      const isEndOfLine = this.caret.pos.x === line.length - 1
+      hasLeftSymbol = ['{','[','('].includes(left)
+
+      indent = line.match(/\S/)?.index ?? line.length - 1
+
+      if (hasLeftSymbol) indent += 2
+
+      if (isEndOfLine || hasLeftSymbol) {
+        text += ' '.repeat(indent)
+      }
+    }
+
+    if (hasLeftSymbol && hasRightSymbol) {
+      this.buffer.insert(this.caret.pos, '\n' + ' '.repeat(indent - 2))
+    }
+
+    let length = 1
+
+    if (!(hasRightSymbol && ['}',']',')'].includes(text))) {
+      length = this.buffer.insert(this.caret.pos, text, null, true)
+    }
+
+    this.moveByChars(length)
+
+    if ('{' === text) this.buffer.insert(this.caret.pos, '}')
+    else if ('(' === text) this.buffer.insert(this.caret.pos, ')')
+    else if ('[' === text) this.buffer.insert(this.caret.pos, ']')
+
+    this.updateText()
   }
 
   backspace () {
@@ -391,7 +426,7 @@ class Editor {
     gutter.fillRect(0, 0, this.canvas.gutter.width, this.canvas.gutter.height)
     gutter.fillStyle = colors.lineNumbers
 
-    for (let i = 0, y = 0; i < this.lines.length; i++) {
+    for (let i = 0, y = 0; i <= this.buffer.loc(); i++) {
       y = this.canvas.padding + i * this.line.height
       gutter.fillText(
         (1 + i).toString().padStart(this.gutter.size),
@@ -569,10 +604,9 @@ class Editor {
     this.keys.add(e.char)
     this.key = e.key.length === 1 ? e.key : null
 
-    if (this.key) {
-      this.insertChar(this.key)
-      return
-    }
+    if (this.key) return this.insert(this.key)
+    if (e.key === 'Enter') return this.insert('\n')
+    if (e.key === 'Tab') return this.insert(' '.repeat(this.tabSize))
 
     this.pressed = [e.cmdKey && 'Cmd', e.key].filter(Boolean).join(' ')
 
