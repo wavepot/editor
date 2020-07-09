@@ -5,6 +5,4 @@ html, body {
   font-family: 'Liberation Mono';
 }
 
-canvas {
-  /*image-rendering: pixelated;*/
-}
+canvas { vertical-align: bottom; }

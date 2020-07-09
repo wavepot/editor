@@ -27,7 +27,7 @@ class Editor {
     const { pixelRatio } = data
     const { width, height } = data.outerCanvas
 
-    this.canvas = { width, height, pixelRatio, padding: 10 }
+    this.canvas = { width, height, pixelRatio, padding: 5 }
     this.canvas.outer = data.outerCanvas
     this.canvas.gutter = new OffscreenCanvas(width, height)
     this.canvas.text = new OffscreenCanvas(width, height)
@@ -61,6 +61,7 @@ class Editor {
     this.lines = []
 
     this.setText(this.setup.toString())
+    // this.setCaret({ col: this.lines[27].length, line: 55, align: 0 })
     this.setCaret({ col: this.lines[27].length, line: 27, align: 0 })
     this.keepCaretInView()
     this.draw()
@@ -131,38 +132,28 @@ class Editor {
     * this.canvas.pixelRatio
 
     if (prevLinesLength !== this.lines.length) {
-      this.canvas.overscrollHeight = -(
-        - (this.lines.length - 1)
-        * this.line.height
-        - this.canvas.padding
-        + this.line.padding
-      ) * this.canvas.pixelRatio
+      this.canvas.overscrollHeight =
+        this.canvas.text.height
+      - (this.line.height + this.line.padding) * this.canvas.pixelRatio
 
       this.canvas.gutter.width =
         (this.gutter.width + this.canvas.padding)
       * this.canvas.pixelRatio
 
       this.canvas.gutter.height =
-        this.canvas.text.height
-      + Math.max(
-          this.canvas.overscrollHeight,
-          this.canvas.height
-        - this.char.height
-        - this.canvas.padding
-        * this.canvas.pixelRatio
-        )
+        this.canvas.overscrollHeight + this.canvas.height
 
       this.ctx.gutter.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
       this.updateGutter()
     }
 
     this.canvas.overscrollWidth =
-      Math.min(
-        Math.max(0, -(this.canvas.width - this.canvas.text.width)),
-        - this.canvas.text.width
-        + this.canvas.width
-        - this.canvas.gutter.width
-        - this.canvas.padding * this.canvas.pixelRatio
+      Math.max(
+        0,
+        this.canvas.text.width
+      - this.canvas.width
+      + this.canvas.gutter.width
+      + this.char.width * 2 * this.canvas.pixelRatio
       )
 
     this.ctx.text.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
@@ -253,41 +244,54 @@ class Editor {
 
   drawScrollbars () {
     // draw scrollbars
-    this.ctx.outer.fillStyle = colors.scrollbar
+    const scrollbar = { width: 40 }
+    scrollbar.margin = scrollbar.width / 2 / 2
 
-    const horiz =
-      this.canvas.width
-    / this.canvas.text.width
-    * this.canvas.width
+    this.ctx.outer.strokeStyle = colors.scrollbar
+    this.ctx.outer.lineWidth = scrollbar.width
+    // this.ctx.outer.lineCap = 'round'
 
-    const vert =
-      this.canvas.height
-    / (this.canvas.text.height - this.canvas.overscrollHeight / this.canvas.pixelRatio)
-    * this.canvas.height
+    const view = {
+      height: this.canvas.height,
+      width: this.canvas.width - this.canvas.gutter.width
+    }
 
-    this.ctx.outer.fillRect(
-      this.canvas.gutter.width
-    - (this.pos.x / this.canvas.pixelRatio)
-    * (horiz
-    / (this.canvas.width
-    - this.canvas.gutter.width
-    - (this.canvas.padding * 2
-    + this.char.width * 2)
-    * this.canvas.pixelRatio)),
-      this.canvas.height - 12,
-      horiz + 1,
-      12
-    )
+    const area = {
+      width:
+        this.canvas.text.width
+      + this.char.width * 2 * this.canvas.pixelRatio,
+      height: this.canvas.overscrollHeight
+    }
 
-    this.ctx.outer.fillRect(
-      this.canvas.width - 12,
-    - (this.pos.y / this.canvas.pixelRatio)
-    * (vert
-    / (this.canvas.height + vert
-    + (this.canvas.padding * 2))),
-      12,
-      vert + 1
-    )
+    const scale = {
+      width: view.width / area.width,
+      height: Math.min(1, view.height / area.height)
+    }
+
+    scrollbar.horiz = scale.width * view.width
+    scrollbar.vert = scale.height * view.height
+
+    const x =
+    - (this.pos.x / this.canvas.overscrollWidth)
+    * (view.width - scrollbar.horiz) || 0
+
+    const y =
+    - (this.pos.y / area.height)
+    * ((view.height - scrollbar.vert) || view.height / 2)
+
+    if (x + view.width - scrollbar.horiz > 12) {
+      this.ctx.outer.beginPath()
+      this.ctx.outer.moveTo(this.canvas.gutter.width + x, this.canvas.height - scrollbar.margin)
+      this.ctx.outer.lineTo(this.canvas.gutter.width + x + scrollbar.horiz + 1, this.canvas.height - scrollbar.margin)
+      this.ctx.outer.stroke()
+    }
+
+    if (y + view.height - scrollbar.vert > 2) {
+      this.ctx.outer.beginPath()
+      this.ctx.outer.moveTo(this.canvas.width - scrollbar.margin, y)
+      this.ctx.outer.lineTo(this.canvas.width - scrollbar.margin, y + scrollbar.vert)
+      this.ctx.outer.stroke()
+    }
   }
 
   drawGutter () {
@@ -320,13 +324,13 @@ class Editor {
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
       this.pos.x += deltaX * 280
       this.pos.x = Math.max(
-        this.canvas.overscrollWidth,
+        -this.canvas.overscrollWidth,
         Math.min(0, this.pos.x)
       )
     } else {
       this.pos.y -= deltaY * 600
       this.pos.y = Math.max(
-        - this.canvas.overscrollHeight,
+        -this.canvas.overscrollHeight,
         Math.min(0, this.pos.y)
       )
     }
