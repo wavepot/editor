@@ -11,7 +11,7 @@ const create = (width, height) => {
   outer.style.width = `${width}px`
   outer.style.height = `${height}px`
   const outerCanvas = outer.transferControlToOffscreen()
-  const worker = new Worker('./editor-worker.js')
+  const worker = new Worker('./editor-worker.js', { type: 'module' })
 
   worker.postMessage({ call: 'setup', outerCanvas, pixelRatio }, [outerCanvas])
 

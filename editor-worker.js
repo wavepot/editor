@@ -1,3 +1,5 @@
+import Buffer from './buffer/index.js'
+
 const colors = {
   back: '#000',
   text: '#fff',
@@ -21,6 +23,7 @@ const parse = (regexp, text) => {
 class Editor {
   constructor () {
     this.pos = { x: 0, y: 0 }
+    this.buffer = new Buffer
   }
 
   async setup (data) {
@@ -64,6 +67,23 @@ class Editor {
     this.setCaret({ col: 0, line: 0, align: 0 })
     this.keepCaretInView()
     this.draw()
+  }
+
+  insertChar (key) {
+    let { col, line, align } = this.caret
+    let lineText = this.lines[line]
+    lineText = lineText.slice(0, col) + key + lineText.slice(col)
+    align = ++col
+    this.lines[line] = lineText
+    this.setText(this.lines.join('\n'))
+    this.setCaret({ col, line, align })
+    this.keepCaretInView()
+    this.draw()
+  }
+
+  backspace () {
+    let { col, line } = this.caret
+    this.lines[line] = lineText.slice(0, col)
   }
 
   keepCaretInView () {
@@ -111,12 +131,14 @@ class Editor {
   setText (text) {
     const prevLinesLength = this.lines.length
 
+    this.buffer.setText(text)
+
     this.text = text
     this.lines = lines(this.text)
 
-    this.longestLineLength = Math.max(...this.lines.map(line => line.length))
+    this.longestLineLength = this.buffer.getLongestLine()
 
-    this.gutter.size = this.lines.length.toString().length
+    this.gutter.size = (1 + this.buffer.loc()).toString().length
     this.gutter.width = this.gutter.size * this.char.width + this.gutter.padding
 
     this.canvas.text.width = (
@@ -159,6 +181,18 @@ class Editor {
     this.updateText()
   }
 
+  hasKeys (keys) {
+    return keys.split(' ').every(key => this.keys.has(key))
+  }
+
+  getLineLength (line) {
+    return this.buffer.getLine(line).length
+  }
+
+  alignCol (line) {
+    return Math.min(this.caret.align, this.buffer.getLineLength(line))
+  }
+
   applyFont (ctx) {
     ctx.textBaseline = 'top'
     ctx.font = 'normal 9pt Liberation Mono'
@@ -189,12 +223,12 @@ class Editor {
     text.clearRect(0, 0, this.canvas.text.width, this.canvas.text.height)
     text.fillStyle = colors.text
 
-    let y = 0
-    for (const [i, lineText] of this.lines.entries()) {
+    let y = 0, loc = this.buffer.loc()
+    for (let i = 0; i <= loc; i++) {
       y = this.canvas.padding + i * this.line.height
 
       text.fillText(
-        lineText,
+        this.buffer.getLineText(i),
         this.gutter.padding,
         y
       )
@@ -351,14 +385,6 @@ class Editor {
     )
   }
 
-  hasKeys (keys) {
-    return keys.split(' ').every(key => this.keys.has(key))
-  }
-
-  alignCol (line) {
-    return Math.min(this.caret.align, this.lines[line]?.length ?? 0)
-  }
-
   onkeydown (e) {
     this.keys.delete(e.key.toLowerCase())
     this.keys.delete(e.key.toUpperCase())
@@ -367,32 +393,39 @@ class Editor {
     this.keys.add(e.char)
     this.key = e.key.length === 1 ? e.key : null
 
+    if (this.key) {
+      this.insertChar(this.key)
+      return
+    }
+
     // navigation
     let { col, line, align } = this.caret
     let prevCol = col
-    const alignCol = () => Math.min(align, this.lines[line]?.length ?? 0)
     if (e.cmdKey && e.key === 'ArrowRight') {
+      const lineText = this.buffer.getLineText(line)
       col =
-        parse(WORD, this.lines[line])
+        parse(WORD, lineText)
         .find(word => word.index > col)
         ?.index
-        ?? this.lines[line].length
+        ?? this.buffer.getLineLength(line)
       if (prevCol === col) col = Infinity
     } else if (e.cmdKey && e.key === 'ArrowLeft') {
-      col = this.lines[line].length - col
+      const lineText = this.buffer.getLineText(line)
+      col = lineText.length - col
       col =
-        parse(WORD, [...this.lines[line]].reverse().join``)
+        parse(WORD, [...lineText].reverse().join``)
         .find(word => word.index > col)
         ?.index
-        ?? this.lines[line].length
-      col = this.lines[line].length - col
+        ?? this.buffer.getLineLength(line)
+      col = this.buffer.getLineLength(line) - col
       if (prevCol === col) col = -Infinity
     } else if (e.key === 'Home') {
+      const lineText = this.buffer.getLineText(line)
       NONSPACE.lastIndex = 0
-      align = col = NONSPACE.exec(this.lines[line])?.index ?? 0
+      align = col = NONSPACE.exec(lineText)?.index ?? 0
       if (prevCol === col) align = col = 0
     } else if (e.key === 'End') {
-      align = col = this.lines[line].length
+      align = col = this.buffer.getLineLength(line)
     } else if (e.key === 'PageUp') {
       line -= this.line.page
       this.pos.y = -Math.max(
@@ -437,17 +470,17 @@ class Editor {
         col = 0
         line = 0
       } else {
-        col = this.lines[line].length
+        col = this.buffer.getLineLength(line)
       }
-    } else if (col > this.lines[line]?.length) {
+    } else if (col > this.buffer.getLineLength(line)) {
       line++
       col = 0
     }
     if (line < 0) {
       line = 0
     } else if (line > this.lines.length - 1) {
-      line = this.lines.length - 1
-      col = this.lines[line].length
+      line = this.buffer.loc()
+      col = this.buffer.getLineLength(line)
     }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       align = col
