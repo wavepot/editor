@@ -1,3 +1,5 @@
+import Regexp from './buffer/regexp.js'
+import Point from './buffer/point.js'
 import Buffer from './buffer/index.js'
 
 const colors = {
@@ -19,6 +21,8 @@ const parse = (regexp, text) => {
   while (word = regexp.exec(text)) words.push(word)
   return words
 }
+
+const WORDS = Regexp.create(['words'], 'g')
 
 class Editor {
   constructor () {
@@ -53,9 +57,17 @@ class Editor {
 
     this.line = { padding: 2 }
     this.line.height = this.char.height + this.line.padding
-    this.line.page = Math.floor(this.canvas.height / this.canvas.pixelRatio / this.line.height)
+
+    this.tabSize = 2
+
+    this.page = {}
+    this.page.lines = Math.floor(this.canvas.height / this.canvas.pixelRatio / this.line.height)
+    this.page.height = this.line.height * this.page.lines * this.canvas.pixelRatio
 
     this.caret = {
+      pos: new Point,
+      px: new Point,
+      align: 0,
       width: 2,
       height: this.line.height + this.line.padding / 2 + 2
     }
@@ -64,8 +76,20 @@ class Editor {
     this.lines = []
 
     this.setText(this.setup.toString())
-    this.setCaret({ col: 0, line: 0, align: 0 })
-    this.keepCaretInView()
+    this.moveCaret({ x: 0, y: 0 })
+  }
+
+  scrollBy (deltaX, deltaY) {
+    this.pos.x += deltaX
+    this.pos.y -= deltaY
+    this.pos.x = Math.max(
+      -this.canvas.overscrollWidth,
+      Math.min(0, this.pos.x)
+    )
+    this.pos.y = Math.max(
+      -this.canvas.overscrollHeight,
+      Math.min(0, this.pos.y)
+    )
     this.draw()
   }
 
@@ -86,8 +110,168 @@ class Editor {
     this.lines[line] = lineText.slice(0, col)
   }
 
+  getPointTabs ({ x, y }) {
+    const line = this.buffer.getLineText(y)
+    let remainder = 0
+    let tabs = 0
+    let tab
+    let prev = 0
+    while (~(tab = line.indexOf('\t', tab + 1))) {
+      if (tab >= x) break
+      remainder += (tab - prev) % this.tabSize
+      tabs++
+      prev = tab + 1
+    }
+    remainder += tabs
+    return { tabs, remainder }
+  }
+
+  getCoordsTabs ({ x, y }) {
+    const line = this.buffer.getLineText(y)
+    let remainder = 0
+    let tabs = 0
+    let tab
+    let prev = 0
+    while (~(tab = line.indexOf('\t', tab + 1))) {
+      if (tabs * this.tabSize + remainder >= x) break
+      remainder += (tab - prev) % this.tabSize
+      tabs++
+      prev = tab + 1
+    }
+    return { tabs, remainder }
+  }
+
+  moveByWords (dx) {
+    let { x, y } = this.caret.pos
+    const line = this.buffer.getLineText(y)
+
+    if (dx > 0 && x >= line.length - 1) { // at end of line
+      return this.moveByChars(+1) // move one char right
+    } else if (dx < 0 && x === 0) { // at begin of line
+      return this.moveByChars(-1) // move one char left
+    }
+
+    let words = parse(WORD, dx > 0 ? line : [...line].reverse().join``)
+    let word
+
+    if (dx < 0) x = line.length - x
+
+    for (let i = 0; i < words.length; i++) {
+      word = words[i]
+      if (word.index > x) {
+        return this.moveCaret({
+          x: dx > 0 ? word.index : line.length - word.index,
+          y
+        })
+      }
+    }
+
+    // reached begin/end of file
+    return dx > 0
+      ? this.moveEndOfLine()
+      : this.moveBeginOfLine()
+  }
+
+  moveByChars (dx) {
+    let { x, y } = this.caret.pos
+
+    if (dx < 0) { // going left
+      x += dx // move left
+      if (x < 0) { // when past left edge
+        if (y > 0) { // and lines above
+          y -= 1 // move up a line
+          x = this.buffer.getLineLength(y) // and go to the end of line
+        } else {
+          x = 0
+        }
+      }
+    } else if (dx > 0) { // going right
+      x += dx // move right
+      while (x - this.buffer.getLineLength(y) > 0) { // while past line length
+        if (y === this.buffer.loc()) { // on end of file
+          x = this.buffer.getLineLength(y) // go to end of line on last line
+          break // and exit
+        }
+        x -= this.buffer.getLineLength(y) + 1 // wrap this line length
+        y += 1 // and move down a line
+      }
+    }
+
+    this.caret.align = x
+    this.moveCaret({ x, y })
+  }
+
+  moveByLines (dy) {
+    let { x, y } = this.caret.pos
+
+    if (dy < 0) { // going up
+      if (y + dy > 0) { // when lines above
+        y += dy // move up
+      } else {
+        y = 0
+      }
+    } else if (dy > 0) { // going down
+      if (y < this.buffer.loc() - dy) { // when lines below
+        y += dy // move down
+      } else {
+        y = this.buffer.loc()
+      }
+    }
+
+    x = Math.min(this.caret.align, this.buffer.getLineLength(y))
+    this.moveCaret({ x, y })
+  }
+
+  moveBeginOfLine (isHomeKey) {
+    const y = this.caret.pos.y
+    let x = 0
+    if (isHomeKey) { // home key oscillates begin of visible text and begin of line
+      const lineText = this.buffer.getLineText(y)
+      NONSPACE.lastIndex = 0
+      x = NONSPACE.exec(lineText)?.index ?? 0
+      if (x === this.caret.pos.x) x = 0
+    }
+    this.caret.align = x
+    return this.moveCaret({ x, y })
+  }
+
+  moveEndOfLine () {
+    const y = this.caret.pos.y
+    const x = this.buffer.getLine(y).length
+    this.caret.align = Infinity
+    return this.moveCaret({ x, y })
+  }
+
+  moveBeginOfFile () {
+    this.caret.align = 0
+    return this.moveCaret({ x: 0, y: 0 })
+  }
+
+  moveEndOfFile () {
+    const y = this.buffer.loc()
+    const x = this.buffer.getLine(y).length
+    this.caret.align = x
+    return this.moveCaret({ x, y })
+  }
+
+  isBeginOfFile () {
+    return this.caret.pos.x === 0 && this.caret.pos.y === 0
+  }
+
+  isEndOfFile () {
+    const { x, y } = this.caret.pos
+    const last = this.buffer.loc()
+    return y === last && x === this.buffer.getLineLength(last)
+  }
+
+  moveCaret ({ x, y }) {
+    this.setCaret({ x, y })
+    this.keepCaretInView()
+    this.draw()
+  }
+
   keepCaretInView () {
-    const { col, line } = this.caret
+    const p = this.caret.pos
 
     const left = -(this.pos.x / this.canvas.pixelRatio)
     const width =
@@ -101,8 +285,8 @@ class Editor {
     const height = this.canvas.height / this.canvas.pixelRatio
     const bottom = top + height
 
-    const x = col * this.char.width
-    const y = line * this.line.height - this.line.padding
+    const x = p.x * this.char.width
+    const y = p.y * this.line.height - this.line.padding
 
     const dx =
       x < left ? left - x
@@ -120,12 +304,13 @@ class Editor {
     if (dx || dy) this.draw()
   }
 
-  setCaret ({ col, line, align }) {
-    this.caret.col = col
-    this.caret.line = line
-    this.caret.align = align
-    this.caret.x = col * this.char.width + this.gutter.padding - 1
-    this.caret.y = line * this.line.height + this.canvas.padding - this.line.padding - 1
+  setCaret (point) {
+    this.caret.pos.set(point)
+    const { tabs, remainder } = this.getPointTabs(this.caret.pos)
+    this.caret.px.set({
+      x: this.char.width * (this.caret.pos.x + tabs * this.tabSize - remainder) + this.gutter.padding - 1,
+      y: this.line.height * this.caret.pos.y + this.canvas.padding - this.line.padding - 1
+    })
   }
 
   setText (text) {
@@ -266,10 +451,10 @@ class Editor {
     this.ctx.outer.fillStyle = colors.caret
     this.ctx.outer.fillRect(
       this.pos.x - 1
-    + (this.caret.x
+    + (this.caret.px.x
     + this.gutter.width
     + this.canvas.padding) * this.canvas.pixelRatio,
-      this.pos.y + this.caret.y * this.canvas.pixelRatio,
+      this.pos.y + this.caret.px.y * this.canvas.pixelRatio,
       this.caret.width * this.canvas.pixelRatio,
       this.caret.height * this.canvas.pixelRatio
     )
@@ -356,19 +541,10 @@ class Editor {
 
   onmousewheel ({ deltaX, deltaY }) {
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      this.pos.x += deltaX * 280
-      this.pos.x = Math.max(
-        -this.canvas.overscrollWidth,
-        Math.min(0, this.pos.x)
-      )
+      this.scrollBy(deltaX * 280, 0)
     } else {
-      this.pos.y -= deltaY * 600
-      this.pos.y = Math.max(
-        -this.canvas.overscrollHeight,
-        Math.min(0, this.pos.y)
-      )
+      this.scrollBy(0, deltaY * 600)
     }
-    this.draw()
   }
 
   onmousedown ({ clientX, clientY }) {
@@ -398,100 +574,20 @@ class Editor {
       return
     }
 
-    // navigation
-    let { col, line, align } = this.caret
-    let prevCol = col
-    if (e.cmdKey && e.key === 'ArrowRight') {
-      const lineText = this.buffer.getLineText(line)
-      col =
-        parse(WORD, lineText)
-        .find(word => word.index > col)
-        ?.index
-        ?? this.buffer.getLineLength(line)
-      if (prevCol === col) col = Infinity
-    } else if (e.cmdKey && e.key === 'ArrowLeft') {
-      const lineText = this.buffer.getLineText(line)
-      col = lineText.length - col
-      col =
-        parse(WORD, [...lineText].reverse().join``)
-        .find(word => word.index > col)
-        ?.index
-        ?? this.buffer.getLineLength(line)
-      col = this.buffer.getLineLength(line) - col
-      if (prevCol === col) col = -Infinity
-    } else if (e.key === 'Home') {
-      const lineText = this.buffer.getLineText(line)
-      NONSPACE.lastIndex = 0
-      align = col = NONSPACE.exec(lineText)?.index ?? 0
-      if (prevCol === col) align = col = 0
-    } else if (e.key === 'End') {
-      align = col = this.buffer.getLineLength(line)
-    } else if (e.key === 'PageUp') {
-      line -= this.line.page
-      this.pos.y = -Math.max(
-        0,
-      - this.pos.y
-      - (this.line.height
-      * this.line.page
-      * this.canvas.pixelRatio)
-      )
-      col = this.alignCol(line)
-    } else if (e.key === 'PageDown') {
-      line += this.line.page
-      this.pos.y = -Math.min(
-        Math.max(
-          0,
-          this.canvas.text.height
-        - this.canvas.height
-        + this.canvas.padding
-        * this.canvas.pixelRatio
-        ),
-      - this.pos.y
-      + (this.line.height
-      * this.line.page
-      * this.canvas.pixelRatio)
-      )
-      col = this.alignCol(line)
-    } else if (e.key === 'ArrowLeft') {
-      col--
-    } else if (e.key === 'ArrowUp') {
-      line--
-      col = this.alignCol(line)
-    } else if (e.key === 'ArrowRight') {
-      col++
-    } else if (e.key === 'ArrowDown') {
-      line++
-      col = this.alignCol(line)
-    }
-    // navigation boundaries
-    if (col < 0) {
-      line--
-      if (line < 0) {
-        col = 0
-        line = 0
-      } else {
-        col = this.buffer.getLineLength(line)
-      }
-    } else if (col > this.buffer.getLineLength(line)) {
-      line++
-      col = 0
-    }
-    if (line < 0) {
-      line = 0
-    } else if (line > this.lines.length - 1) {
-      line = this.buffer.loc()
-      col = this.buffer.getLineLength(line)
-    }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      align = col
-    }
+    this.pressed = [e.cmdKey && 'Cmd', e.key].filter(Boolean).join(' ')
 
-    if (col !== this.caret.col || line !== this.caret.line) {
-      this.setCaret({ col, line, align })
-      this.keepCaretInView()
-      this.draw()
-    } else {
-      this.keepCaretInView()
+    // navigation
+    switch (this.pressed) {
+      case 'Cmd ArrowLeft'  : this.moveByWords(-1); break
+      case 'Cmd ArrowRight' : this.moveByWords(+1); break
+      case 'ArrowLeft'      : this.moveByChars(-1); break
+      case 'ArrowRight'     : this.moveByChars(+1); break
+      case 'ArrowUp'        : this.moveByLines(-1); break
+      case 'ArrowDown'      : this.moveByLines(+1); break
+      case 'PageUp'         : this.scrollBy(0, -this.page.height); this.moveByLines(-this.page.lines); break
+      case 'PageDown'       : this.scrollBy(0, +this.page.height); this.moveByLines(+this.page.lines); break
+      case 'Home'           : this.moveBeginOfLine(true); break
+      case 'End'            : this.moveEndOfLine(); break
     }
   }
 
