@@ -46,7 +46,7 @@ class Editor {
     this.char.width = this.char.metrics.width
     this.char.height = this.char.metrics.emHeightDescent
 
-    this.gutter = { padding: 5 }
+    this.gutter = { padding: 3 }
 
     this.line = { padding: 2 }
     this.line.height = this.char.height + this.line.padding
@@ -262,25 +262,23 @@ class Editor {
       + this.char.width * 2 * this.canvas.pixelRatio,
       height:
         this.canvas.text.height
-      // + this.line.height * this.canvas.pixelRatio
-      // - this.canvas.padding * 2 * this.canvas.pixelRatio
     }
 
     const scale = {
       width: view.width / area.width,
-      height: view.height / area.height //Math.min(1, view.height / area.height)
+      height: view.height / area.height
     }
 
     scrollbar.horiz = scale.width * view.width
-    scrollbar.vert = scale.height * view.height + (scale.height * (this.canvas.padding - (this.line.height - this.line.padding) * this.canvas.pixelRatio))
+    scrollbar.vert = scale.height * view.height
 
     const x =
-    - (this.pos.x / this.canvas.overscrollWidth)
-    * (view.width - scrollbar.horiz) || 0
+    - (this.pos.x / (this.canvas.overscrollWidth || 1))
+    * ((view.width - scrollbar.horiz) || 1) || 0
 
     const y =
-    - (this.pos.y / this.canvas.overscrollHeight)
-    * Math.max((view.height - scrollbar.vert), view.height / 2)
+    - (this.pos.y / ((this.canvas.text.height - this.canvas.height) || 1))
+    * ((view.height - scrollbar.vert) || 1)
 
     if (x + view.width - scrollbar.horiz > 12) {
       this.ctx.outer.beginPath()
