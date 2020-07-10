@@ -786,9 +786,7 @@ class Editor {
     switch (this.pressed) {
       case 'Cmd D':
         this.align()
-
         const area = this.mark.get()
-
         if (area.isEmpty()) {
           this.buffer.insert(
             { x: 0, y: this.caret.pos.y },
@@ -813,6 +811,7 @@ class Editor {
           if (area.end.x > 0) {
             addY = 1
             text = '\n'
+            area.end.x = this.buffer.getLineLength(area.end.y)
           }
           area.begin.x = 0
           text = text + this.buffer.getAreaText(area)
