@@ -836,8 +836,46 @@ class Editor {
       case 'Cmd Delete'     : this.markBegin(); e.shiftKey ? this.moveEndOfLine() : this.moveByWords(+1); this.markSet(); this.delete(); this.align(); break
       case 'Cmd ArrowLeft'  : this.moveByWords(-1); this.align(); break
       case 'Cmd ArrowRight' : this.moveByWords(+1); this.align(); break
-      case 'Cmd ArrowUp'    : this.scrollBy(0, -(this.line.height) * this.canvas.pixelRatio); break
-      case 'Cmd ArrowDown'  : this.scrollBy(0, +(this.line.height) * this.canvas.pixelRatio); break
+      case 'Cmd ArrowUp':
+        if (e.shiftKey) {
+          this.align()
+          this.markBegin(false)
+          const area = this.mark.get()
+          if (!area.isEmpty() && area.end.x === 0) {
+            area.end.y = area.end.y - 1
+            area.end.x = this.buffer.getLine(area.end.y).length
+          }
+          if (this.buffer.moveAreaByLines(-1, area)) {
+            this.updateSizes()
+            this.updateText()
+            this.mark.shiftByLines(-1)
+            this.moveByLines(-1)
+            this.updateMark()
+          }
+        } else {
+          this.scrollBy(0, -(this.line.height) * this.canvas.pixelRatio)
+        }
+        break
+      case 'Cmd ArrowDown':
+        if (e.shiftKey) {
+          this.align()
+          this.markBegin(false)
+          const area = this.mark.get()
+          if (!area.isEmpty() && area.end.x === 0) {
+            area.end.y = area.end.y - 1
+            area.end.x = this.buffer.getLine(area.end.y).length
+          }
+          if (this.buffer.moveAreaByLines(+1, area)) {
+            this.updateSizes()
+            this.updateText()
+            this.mark.shiftByLines(+1)
+            this.moveByLines(+1)
+            this.updateMark()
+          }
+        } else {
+          this.scrollBy(0, +(this.line.height) * this.canvas.pixelRatio)
+        }
+        break
       case 'ArrowLeft'      : this.moveByChars(-1); break
       case 'ArrowRight'     : this.moveByChars(+1); break
       case 'ArrowUp'        : this.moveByLines(-1); break
