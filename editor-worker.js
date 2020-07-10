@@ -390,6 +390,14 @@ class Editor {
     return y === last && x === this.buffer.getLineLength(last)
   }
 
+  isBeginOfLine () {
+    return this.caret.pos.x === 0
+  }
+
+  isEndOfLine () {
+    return this.caret.pos.x === this.buffer.getLineLength(this.caret.pos.y)
+  }
+
   moveCaret ({ x, y }) {
     this.setCaret({ x, y })
     this.keepCaretInView()
@@ -764,17 +772,29 @@ class Editor {
     this.pressed = [e.cmdKey && 'Cmd', e.key].filter(Boolean).join(' ')
 
     // navigation
-    if (e.shiftKey) this.markBegin()
-    else this.markClear()
+    if (e.shiftKey && e.key !== 'Shift') this.markBegin()
+    else if (e.key !== 'Control') this.markClear()
 
     switch (this.pressed) {
-      case 'Delete'         :
-      case 'Cmd D'          : this.markClear(true); this.buffer.insert({ x: 0, y: this.caret.pos.y }, this.buffer.getLineText(this.caret.pos.y)); this.updateText(); this.moveByLines(+1);  break
-      case 'Cmd x'          : this.markClear(true); this.moveBeginOfLine(); this.markBegin(); this.moveByLines(+1); this.markSet(); this.delete(); break
+      case 'Cmd D'          :
+        this.markClear(true)
+        this.buffer.insert(
+          { x: 0, y: this.caret.pos.y },
+          this.buffer.getLineText(this.caret.pos.y)
+        + (this.caret.pos.y === this.buffer.loc() ? '\n' : '')
+        )
+        this.updateSizes()
+        this.updateText()
+        this.moveByLines(+1)
+        break
+      case 'Delete': case 'Cmd x': this.markClear(true); this.moveBeginOfLine(); this.markBegin(); this.moveByLines(+1); this.markSet(); this.delete(); break
+      case 'Cmd a'          : this.markClear(true); this.moveBeginOfFile(); this.markBegin(); this.moveEndOfFile(); this.markSet(); break
       case 'Cmd Backspace'  : this.markBegin(); e.shiftKey ? this.moveBeginOfLine() : this.moveByWords(-1); this.markSet(); this.delete(); break
       case 'Cmd Delete'     : this.markBegin(); e.shiftKey ? this.moveEndOfLine() : this.moveByWords(+1); this.markSet(); this.delete(); this.align(); break
       case 'Cmd ArrowLeft'  : this.moveByWords(-1); this.align(); break
       case 'Cmd ArrowRight' : this.moveByWords(+1); this.align(); break
+      case 'Cmd ArrowUp'    : this.scrollBy(0, -(this.line.height) * this.canvas.pixelRatio); break
+      case 'Cmd ArrowDown'  : this.scrollBy(0, +(this.line.height) * this.canvas.pixelRatio); break
       case 'ArrowLeft'      : this.moveByChars(-1); break
       case 'ArrowRight'     : this.moveByChars(+1); break
       case 'ArrowUp'        : this.moveByLines(-1); break
