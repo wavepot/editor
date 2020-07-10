@@ -5,4 +5,6 @@ html, body {
   font-family: 'Liberation Mono';
 }
 
-canvas { vertical-align: bottom; }
+.editor {
+  display: inline-block;
+}

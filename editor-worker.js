@@ -87,6 +87,8 @@ class Editor {
     this.text = ''
     this.lines = []
 
+    this.history = { count: 1 }
+
     this.setText(this.setup.toString())
     // this.setText('hello\n')
     this.moveCaret({ x: 0, y: 0 })
@@ -220,6 +222,8 @@ class Editor {
 
   markClear (force) {
     if (this.keys.has('Shift') && !force || !this.mark.active) return
+
+    postMessage({ call: 'onselection', text: '' })
 
     this.mark.active = false
     this.mark.set({
@@ -606,6 +610,8 @@ class Editor {
         }
       }
     }
+
+    postMessage({ call: 'onselection', text: this.buffer.getAreaText(this.mark.get()) })
   }
 
   clear () {
@@ -741,11 +747,17 @@ class Editor {
     })
   }
 
+  onmouseenter () {}
+
+  onmouseout () {}
+
   onmousewheel ({ deltaX, deltaY }) {
+    deltaX *= 280
+    deltaY *= 600
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      this.scrollBy(deltaX * 280, 0)
+      this.scrollBy(deltaX, 0)
     } else {
-      this.scrollBy(0, deltaY * 600)
+      this.scrollBy(0, deltaY)
     }
   }
 
@@ -761,6 +773,10 @@ class Editor {
         )
       )
     )
+  }
+
+  onmousemove ({ clientX, clientY }) {
+    // TODO
   }
 
   onkeydown (e) {
@@ -902,6 +918,17 @@ class Editor {
     this.keys.delete(e.char)
     if (e.key === this.key) {
       this.key = null
+    }
+  }
+
+  onpaste ({ text }) {
+    this.insert(text)
+    postMessage({ call: 'onhistory', count: ++this.history.count })
+  }
+
+  onhistory ({ count }) {
+    if (count !== this.history.count) {
+      this.history.count = count
     }
   }
 
