@@ -77,8 +77,8 @@ export default class Area {
   }
 
   addRight (x) {
-    if (this.begin.x) this.begin.x += x;
-    if (this.end.x) this.end.x += x;
+    this.begin.x += x;
+    this.end.x += x;
     return this;
   }
 
@@ -119,6 +119,10 @@ export default class Area {
     return this.end.y === a.end.y
       ? this.end.x <= a.end.x
       : this.end.y < a.end.y;
+  }
+
+  isEmpty () {
+    return this.begin.equal(this.end)
   }
 
   inside (a) {

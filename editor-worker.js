@@ -776,17 +776,49 @@ class Editor {
     else if (e.key !== 'Control') this.markClear()
 
     switch (this.pressed) {
-      case 'Cmd D'          :
-        this.markClear(true)
-        this.buffer.insert(
-          { x: 0, y: this.caret.pos.y },
-          this.buffer.getLineText(this.caret.pos.y)
-        + (this.caret.pos.y === this.buffer.loc() ? '\n' : '')
-        )
-        this.updateSizes()
-        this.updateText()
-        this.moveByLines(+1)
-        break
+      case 'Cmd D':
+        this.align()
+
+        const area = this.mark.get()
+
+        if (area.isEmpty()) {
+          this.buffer.insert(
+            { x: 0, y: this.caret.pos.y },
+            this.buffer.getLineText(this.caret.pos.y)
+          + (this.caret.pos.y === this.buffer.loc() ? '\n' : '')
+          )
+          this.updateSizes()
+          this.updateText()
+          this.moveByLines(+1)
+          this.markClear(true)
+        } else if (area.begin.y === area.end.y) {
+          const text = this.buffer.getAreaText(area)
+          this.buffer.insert(this.caret.pos, text)
+          this.updateSizes()
+          this.updateText()
+          this.moveByChars(text.length)
+          this.mark.addRight(text.length)
+          this.updateMark()
+        } else {
+          let text = ''
+          if (area.end.y === this.buffer.loc()) {
+            area.begin.x = 0
+            area.end.x = this.buffer.getLineLength(this.buffer.loc())
+            area.end.y += 1
+            text = '\n'
+          } else {
+            if (area.end.x > 0) area.addBottom(1)
+            area.setLeft(0)
+          }
+          text = text + this.buffer.getAreaText(area)
+          this.buffer.insert(area.end, text)
+          this.updateSizes()
+          this.updateText()
+          this.moveByLines(area.height)
+          this.mark.shiftByLines(area.height)
+          this.updateMark()
+        }
+        return
       case 'Delete': case 'Cmd x': this.markClear(true); this.moveBeginOfLine(); this.markBegin(); this.moveByLines(+1); this.markSet(); this.delete(); break
       case 'Cmd a'          : this.markClear(true); this.moveBeginOfFile(); this.markBegin(); this.moveEndOfFile(); this.markSet(); break
       case 'Cmd Backspace'  : this.markBegin(); e.shiftKey ? this.moveBeginOfLine() : this.moveByWords(-1); this.markSet(); this.delete(); break

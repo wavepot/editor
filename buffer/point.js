@@ -17,6 +17,10 @@ Point.prototype.copy = function() {
   return new Point(this);
 };
 
+Point.prototype.equal = function(p) {
+  return this.x === p.x && this.y === p.y
+}
+
 Point.prototype.addRight = function(x) {
   this.x += x;
   return this;

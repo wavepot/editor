@@ -106,13 +106,11 @@ Buffer.prototype.remove =
 Buffer.prototype.removeOffsetRange = function(o, noLog) {
   this.emit('before update');
 
-  // console.log('offsets', o)
   var a = this.getOffsetPoint(o[0]);
   var b = this.getOffsetPoint(o[1]);
   var length = o[0] - o[1];
   var range = [a.y, b.y];
   var shift = a.y - b.y;
-  // console.log(a,b)
 
   var offsetRange = this.getLineRangeOffsets(range);
   var before = this.getOffsetRangeText(offsetRange);
@@ -322,10 +320,12 @@ Buffer.prototype.moveAreaByLines = function(y, area) {
 };
 
 Buffer.prototype.getAreaOffsetRange = function(area) {
+  var end = this.getPoint(area.end)
   var range = [
     this.getPoint(area.begin).offset,
-    this.getPoint(area.end).offset
+    end.offset
   ];
+  if (range[1] === range[0]) range[1] = end.offset + end.line.length
   return range;
 };
 
