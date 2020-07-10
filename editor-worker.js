@@ -768,12 +768,13 @@ class Editor {
     else this.markClear()
 
     switch (this.pressed) {
-      case 'Cmd ArrowLeft'  : this.moveByWords(-1); this.align(); break
-      case 'Cmd ArrowRight' : this.moveByWords(+1); this.align(); break
+      case 'Delete'         :
+      case 'Cmd D'          : this.markClear(true); this.buffer.insert({ x: 0, y: this.caret.pos.y }, this.buffer.getLineText(this.caret.pos.y)); this.updateText(); this.moveByLines(+1);  break
+      case 'Cmd x'          : this.markClear(true); this.moveBeginOfLine(); this.markBegin(); this.moveByLines(+1); this.markSet(); this.delete(); break
       case 'Cmd Backspace'  : this.markBegin(); e.shiftKey ? this.moveBeginOfLine() : this.moveByWords(-1); this.markSet(); this.delete(); break
       case 'Cmd Delete'     : this.markBegin(); e.shiftKey ? this.moveEndOfLine() : this.moveByWords(+1); this.markSet(); this.delete(); this.align(); break
-      case 'Cmd x':
-      case 'Delete'         : this.markClear(true); this.moveBeginOfLine(); this.markBegin(); this.moveByLines(+1); this.markSet(); this.delete(); break
+      case 'Cmd ArrowLeft'  : this.moveByWords(-1); this.align(); break
+      case 'Cmd ArrowRight' : this.moveByWords(+1); this.align(); break
       case 'ArrowLeft'      : this.moveByChars(-1); break
       case 'ArrowRight'     : this.moveByChars(+1); break
       case 'ArrowUp'        : this.moveByLines(-1); break
