@@ -87,8 +87,8 @@ class Editor {
     this.text = ''
     this.lines = []
 
-    // this.setText(this.setup.toString())
-    this.setText('hello\n')
+    this.setText(this.setup.toString())
+    // this.setText('hello\n')
     this.moveCaret({ x: 0, y: 0 })
     // this.markSetArea({ begin: { x: 4, y: 1 }, end: { x: 9, y: 10 }})
   }
@@ -122,6 +122,7 @@ class Editor {
 
     this.updateSizes()
     this.updateText()
+    this.draw()
   }
 
   align () {
@@ -145,7 +146,7 @@ class Editor {
   }
 
   insert (text) {
-    // if (this.mark.active) this.delete();
+    if (this.mark.active) this.delete()
 
     // this.emit('input', text, this.caret.copy(), this.mark.copy(), this.mark.active);
 
@@ -390,15 +391,7 @@ class Editor {
   }
 
   moveCaret ({ x, y }) {
-    if (this.keys.has('Shift')) {
-      this.markBegin()
-    } else if (!this.keys.has('Control')) {
-      this.markClear()
-    }
     this.setCaret({ x, y })
-    if (this.keys.has('Shift')) {
-      this.markSet()
-    }
     this.keepCaretInView()
     this.draw()
   }
@@ -762,20 +755,25 @@ class Editor {
     this.keys.add(e.char)
     this.key = e.key.length === 1 ? e.key : null
 
-    if (this.key) return this.insert(this.key)
+    if (!e.cmdKey && this.key) return this.insert(this.key)
     if (e.key === 'Enter') return this.insert('\n')
     if (e.key === 'Tab') return this.insert(' '.repeat(this.tabSize))
     if (!e.cmdKey && e.key === 'Backspace') return this.backspace()
-    if (!e.cmdKey && e.key === 'Delete') return this.delete()
+    if (!e.cmdKey && !e.shiftKey && e.key === 'Delete') return this.delete()
 
     this.pressed = [e.cmdKey && 'Cmd', e.key].filter(Boolean).join(' ')
 
     // navigation
+    if (e.shiftKey) this.markBegin()
+    else this.markClear()
+
     switch (this.pressed) {
       case 'Cmd ArrowLeft'  : this.moveByWords(-1); this.align(); break
       case 'Cmd ArrowRight' : this.moveByWords(+1); this.align(); break
-      case 'Cmd Backspace'  : this.markBegin(); this.moveByWords(-1); this.markSet(); this.delete(); break
-      case 'Cmd Delete'     : this.markBegin(); this.moveByWords(+1); this.markSet(); this.delete(); this.align(); break
+      case 'Cmd Backspace'  : this.markBegin(); e.shiftKey ? this.moveBeginOfLine() : this.moveByWords(-1); this.markSet(); this.delete(); break
+      case 'Cmd Delete'     : this.markBegin(); e.shiftKey ? this.moveEndOfLine() : this.moveByWords(+1); this.markSet(); this.delete(); this.align(); break
+      case 'Cmd x':
+      case 'Delete'         : this.markClear(true); this.moveBeginOfLine(); this.markBegin(); this.moveByLines(+1); this.markSet(); this.delete(); break
       case 'ArrowLeft'      : this.moveByChars(-1); break
       case 'ArrowRight'     : this.moveByChars(+1); break
       case 'ArrowUp'        : this.moveByLines(-1); break
@@ -785,6 +783,8 @@ class Editor {
       case 'Home'           : this.moveBeginOfLine(true); break
       case 'End'            : this.moveEndOfLine(); break
     }
+
+    if (e.shiftKey) this.markSet()
   }
 
   onkeyup (e) {
