@@ -188,7 +188,7 @@ class Editor {
   }
 
   markClear (force) {
-    if (this.keys.has('Shift') && !force) return
+    if (this.keys.has('Shift') && !force || !this.mark.active) return
 
     this.mark.active = false
     this.mark.set({
@@ -247,10 +247,9 @@ class Editor {
     for (let i = 0; i < words.length; i++) {
       word = words[i]
       if (word.index > x) {
-        return this.moveCaret({
-          x: dx > 0 ? word.index : line.length - word.index,
-          y
-        })
+        x = dx > 0 ? word.index : line.length - word.index
+        this.caret.align = x
+        return this.moveCaret({ x, y })
       }
     }
 
@@ -296,12 +295,20 @@ class Editor {
       if (y + dy > 0) { // when lines above
         y += dy // move up
       } else {
+        if (y === 0) { // if already at top line
+          x = 0 // move caret to begin of line
+          return this.moveCaret({ x, y })
+        }
         y = 0
       }
     } else if (dy > 0) { // going down
       if (y < this.sizes.loc - dy) { // when lines below
         y += dy // move down
       } else {
+        if (y === this.sizes.loc) { // if already at bottom line
+          x = this.buffer.getLineLength(y) // move caret to end of line
+          return this.moveCaret({ x, y })
+        }
         y = this.sizes.loc
       }
     }
@@ -353,7 +360,15 @@ class Editor {
   }
 
   moveCaret ({ x, y }) {
+    if (this.keys.has('Shift')) {
+      this.markBegin({ begin: this.caret.pos, end: this.caret.pos })
+    } else {
+      this.markClear()
+    }
     this.setCaret({ x, y })
+    if (this.keys.has('Shift')) {
+      this.markSet()
+    }
     this.keepCaretInView()
     this.draw()
   }
