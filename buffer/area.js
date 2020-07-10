@@ -72,7 +72,7 @@ export default class Area {
 
   setLeft (x) {
     this.begin.x = x;
-    this.end.x = x;
+    // this.end.x = x;
     return this;
   }
 

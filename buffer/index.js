@@ -87,15 +87,15 @@ Buffer.prototype.insertTextAtPoint = function(p, text, noLog) {
   this.tokens.update(offsetRange, after, length);
   this.segments.clearCache(offsetRange[0]);
 
-  if (!noLog) {
-    var lastLog = this.log[this.log.length - 1];
-    if (lastLog && lastLog[0] === 'insert' && lastLog[1][1] === point.offset) {
-      lastLog[1][1] += text.length;
-      lastLog[2] += text;
-    } else {
-      this.log.push(['insert', [point.offset, point.offset + text.length], text]);
-    }
-  }
+  // if (!noLog) {
+  //   var lastLog = this.log[this.log.length - 1];
+  //   if (lastLog && lastLog[0] === 'insert' && lastLog[1][1] === point.offset) {
+  //     lastLog[1][1] += text.length;
+  //     lastLog[2] += text;
+  //   } else {
+  //     this.log.push(['insert', [point.offset, point.offset + text.length], text]);
+  //   }
+  // }
 
   this.emit('update', range, shift, before, after);
 
@@ -122,15 +122,15 @@ Buffer.prototype.removeOffsetRange = function(o, noLog) {
   this.tokens.update(offsetRange, after, length);
   this.segments.clearCache(offsetRange[0]);
 
-  if (!noLog) {
-    var lastLog = this.log[this.log.length - 1];
-    if (lastLog && lastLog[0] === 'remove' && lastLog[1][0] === o[1]) {
-      lastLog[1][0] -= text.length;
-      lastLog[2] = text + lastLog[2];
-    } else {
-      this.log.push(['remove', o, text]);
-    }
-  }
+  // if (!noLog) {
+  //   var lastLog = this.log[this.log.length - 1];
+  //   if (lastLog && lastLog[0] === 'remove' && lastLog[1][0] === o[1]) {
+  //     lastLog[1][0] -= text.length;
+  //     lastLog[2] = text + lastLog[2];
+  //   } else {
+  //     this.log.push(['remove', o, text]);
+  //   }
+  // }
 
   this.emit('update', range, shift, before, after);
 };
@@ -182,10 +182,11 @@ Buffer.prototype.get = function(range) {
 
 Buffer.prototype.getLine = function(y) {
   var line = new Line;
+  var loc = this.loc()
   line.offsetRange = this.getLineRangeOffsets([y,y]);
   line.offset = line.offsetRange[0];
-  line.length = line.offsetRange[1] - line.offsetRange[0] - (y < this.loc());
-  line.point.set({ x:0, y:y });
+  line.length = line.offsetRange[1] - line.offsetRange[0] - (y < loc ? 1 : 0);
+  line.point.set({ x: 0, y:y >= loc ? loc : y });
   return line;
 };
 
@@ -320,12 +321,12 @@ Buffer.prototype.moveAreaByLines = function(y, area) {
 };
 
 Buffer.prototype.getAreaOffsetRange = function(area) {
+  var begin = this.getPoint(area.begin)
   var end = this.getPoint(area.end)
   var range = [
-    this.getPoint(area.begin).offset,
-    end.offset
+    begin.offset,
+    end.y < area.end.y ? end.line.offsetRange[1] : end.offset
   ];
-  if (range[1] === range[0]) range[1] = end.offset + end.line.length
   return range;
 };
 

@@ -488,11 +488,15 @@ class Editor {
       changed = true
       this.sizes.longestLineLength = longestLineLength
 
-      this.canvas.text.width = this.canvas.mark.width = (
+      this.canvas.text.width = (
         this.sizes.longestLineLength
       * this.char.width
       + this.gutter.padding
       ) * this.canvas.pixelRatio
+
+      this.canvas.mark.width =
+        this.canvas.text.width
+      + this.char.width / 2 * this.canvas.pixelRatio
 
       this.canvas.overscrollWidth =
         Math.max(
@@ -570,11 +574,15 @@ class Editor {
     const Y = area.begin.y
     const { begin, end } = area.normalizeY()
 
-    this.canvas.mark.height = (1 + this.mark.height) * this.line.height + this.line.padding + 5
+    this.canvas.mark.height = (
+      (1 + area.height) * this.line.height + this.line.padding
+    ) * this.canvas.pixelRatio
+
+    mark.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
 
     mark.fillStyle = colors.mark
     const r = this.canvas.pixelRatio
-    const xx = this.canvas.gutter.width / r + this.gutter.padding
+    const xx = this.gutter.padding
     const yy = this.canvas.padding / r
     let ax = 0, bx = 0, ay = 0, by = 0
     const drawMarkArea = ({ begin, end }, eax = 0, ebx = 0) => {
@@ -632,10 +640,10 @@ class Editor {
 
     this.ctx.outer.drawImage(
       this.canvas.mark,
-      this.pos.x,
+      this.pos.x + this.canvas.gutter.width,
       this.pos.y + begin.y * this.line.height * this.canvas.pixelRatio,
-      this.canvas.mark.width * this.canvas.pixelRatio,
-      this.canvas.mark.height * this.canvas.pixelRatio
+      this.canvas.mark.width,
+      this.canvas.mark.height
     )
   }
 
@@ -801,17 +809,15 @@ class Editor {
           this.updateMark()
         } else {
           let text = ''
-          if (area.end.y === this.buffer.loc()) {
-            area.begin.x = 0
-            area.end.x = this.buffer.getLineLength(this.buffer.loc())
-            area.end.y += 1
+          let addY = 0
+          if (area.end.x > 0) {
+            addY = 1
             text = '\n'
-          } else {
-            if (area.end.x > 0) area.addBottom(1)
-            area.setLeft(0)
           }
+          area.begin.x = 0
           text = text + this.buffer.getAreaText(area)
           this.buffer.insert(area.end, text)
+          area.end.y += addY
           this.updateSizes()
           this.updateText()
           this.moveByLines(area.height)
