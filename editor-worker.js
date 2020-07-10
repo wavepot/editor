@@ -1,10 +1,12 @@
 import Regexp from './buffer/regexp.js'
+import Area from './buffer/area.js'
 import Point from './buffer/point.js'
 import Buffer from './buffer/index.js'
 
 const colors = {
   back: '#000',
   text: '#fff',
+  mark: '#449',
   caret: '#77f',
   gutter: '#333',
   scrollbar: '#555',
@@ -38,11 +40,13 @@ class Editor {
     this.canvas = { width, height, pixelRatio, padding: 3 }
     this.canvas.outer = data.outerCanvas
     this.canvas.gutter = new OffscreenCanvas(width, height)
+    this.canvas.mark = new OffscreenCanvas(width, height)
     this.canvas.text = new OffscreenCanvas(width, height)
 
     this.ctx = {}
     this.ctx.outer = this.canvas.outer.getContext('2d')
     this.ctx.gutter = this.canvas.gutter.getContext('2d')
+    this.ctx.mark = this.canvas.mark.getContext('2d')
     this.ctx.text = this.canvas.text.getContext('2d')
 
     this.key = null
@@ -75,11 +79,17 @@ class Editor {
       height: this.line.height + this.line.padding / 2 + 2
     }
 
+    this.mark = new Area({
+      begin: new Point({ x: -1, y: -1 }),
+      end: new Point({ x: -1, y: -1 })
+    })
+
     this.text = ''
     this.lines = []
 
     this.setText(this.setup.toString())
     this.moveCaret({ x: 0, y: 0 })
+    this.markSetArea({ begin: { x: 4, y: 1 }, end: { x: 9, y: 10 }})
   }
 
   scrollBy (deltaX, deltaY) {
@@ -149,6 +159,43 @@ class Editor {
     this.buffer.removeCharAtPoint(this.caret.pos)
     this.updateSizes()
     this.updateText()
+  }
+
+  markBegin (area) {
+    if (!this.mark.active) {
+      this.mark.active = true
+      if (area) {
+        this.mark.set(area)
+      } else if (area !== false || this.mark.begin.x === -1) {
+        this.mark.begin.set(this.caret.pos)
+        this.mark.end.set(this.caret.pos)
+      }
+    }
+  }
+
+  markSet () {
+    if (this.mark.active) {
+      this.mark.end.set(this.caret.pos)
+      this.updateMark()
+      this.draw()
+    }
+  }
+
+  markSetArea (area) {
+    this.markBegin(area)
+    this.updateMark()
+    this.draw()
+  }
+
+  markClear (force) {
+    if (this.keys.has('Shift') && !force) return
+
+    this.mark.active = false
+    this.mark.set({
+      begin: new Point({ x: -1, y: -1 }),
+      end: new Point({ x: -1, y: -1 })
+    })
+    this.draw()
   }
 
   getPointTabs ({ x, y }) {
@@ -395,7 +442,7 @@ class Editor {
       changed = true
       this.sizes.longestLineLength = longestLineLength
 
-      this.canvas.text.width = (
+      this.canvas.text.width = this.canvas.mark.width = (
         this.sizes.longestLineLength
       * this.char.width
       + this.gutter.padding
@@ -471,6 +518,42 @@ class Editor {
     }
   }
 
+  updateMark () {
+    const { mark } = this.ctx
+    const area = this.mark.get()
+    const Y = area.begin.y
+    const { begin, end } = area.normalizeY()
+
+    this.canvas.mark.height = (1 + this.mark.height) * this.line.height + this.line.padding + 5
+
+    mark.fillStyle = colors.mark
+    const r = this.canvas.pixelRatio
+    const xx = this.canvas.gutter.width / r + this.gutter.padding
+    const yy = this.canvas.padding / r
+    let ax = 0, bx = 0, ay = 0, by = 0
+    const drawMarkArea = ({ begin, end }, eax = 0, ebx = 0) => {
+      ax = begin.x * this.char.width
+      bx = (end.x - begin.x) * this.char.width
+      ay = begin.y * this.line.height - .5
+      by = this.line.height + .5
+      mark.fillRect(xx + ax + eax, yy + ay, bx - eax + ebx, by)
+    }
+
+    if (begin.y === end.y) {
+      drawMarkArea({ begin, end })
+    } else {
+      for (let y = begin.y; y <= end.y; y++) {
+        if (y === begin.y) {
+          drawMarkArea({ begin, end: { x: this.buffer.getLineLength(y + Y) } }, 0, this.char.width / 2)
+        } else if (y === end.y) {
+          drawMarkArea({ begin: { x: 0, y }, end }, -this.gutter.padding)
+        } else {
+          drawMarkArea({ begin: { x: 0, y }, end: { x: this.buffer.getLineLength(y + Y), y }}, -this.gutter.padding, this.char.width / 2)
+        }
+      }
+    }
+  }
+
   clear () {
     // clear
     this.ctx.outer.fillStyle = colors.back
@@ -494,6 +577,19 @@ class Editor {
       0,
       this.canvas.width,
       this.canvas.height
+    )
+  }
+
+  drawMark () {
+    // draw mark layer
+    const { begin } = this.mark.get()
+
+    this.ctx.outer.drawImage(
+      this.canvas.mark,
+      this.pos.x,
+      this.pos.y + begin.y * this.line.height * this.canvas.pixelRatio,
+      this.canvas.mark.width * this.canvas.pixelRatio,
+      this.canvas.mark.height * this.canvas.pixelRatio
     )
   }
 
@@ -584,8 +680,9 @@ class Editor {
     this.animFrame = requestAnimationFrame(() => {
       this.clear()
       this.drawScrollbars()
-      this.drawText()
+      if (this.mark.active) this.drawMark()
       this.drawCaret()
+      this.drawText()
       this.drawGutter()
     })
   }
