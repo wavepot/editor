@@ -106,6 +106,43 @@ class Editor {
     this.draw()
   }
 
+  erase (moveByChars = 0) {
+    if (this.mark.active) {
+      // this.history.save(true);
+      const area = this.mark.get()
+      this.moveCaret(area.begin)
+      this.buffer.removeArea(area)
+      this.markClear(true)
+    } else {
+      // this.history.save();
+      if (moveByChars) this.moveByChars(moveByChars)
+      this.buffer.removeCharAtPoint(this.caret.pos)
+    }
+
+    this.updateSizes()
+    this.updateText()
+  }
+
+  align () {
+    this.caret.align = this.caret.pos.x
+  }
+
+  delete () {
+    if (this.isEndOfFile()) {
+      if (this.mark.active && !this.isBeginOfFile()) return this.backspace()
+      return
+    }
+    this.erase()
+  }
+
+  backspace () {
+    if (this.isBeginOfFile()) {
+      if (this.mark.active && !this.isEndOfFile()) return this.delete()
+      return
+    }
+    this.erase(-1)
+  }
+
   insert (text) {
     // if (this.mark.active) this.delete();
 
@@ -150,14 +187,6 @@ class Editor {
     else if ('(' === text) this.buffer.insert(this.caret.pos, ')')
     else if ('[' === text) this.buffer.insert(this.caret.pos, ']')
 
-    this.updateText()
-  }
-
-  backspace () {
-    if (this.isBeginOfFile()) return
-    this.moveByChars(-1)
-    this.buffer.removeCharAtPoint(this.caret.pos)
-    this.updateSizes()
     this.updateText()
   }
 
@@ -248,7 +277,7 @@ class Editor {
       word = words[i]
       if (word.index > x) {
         x = dx > 0 ? word.index : line.length - word.index
-        this.caret.align = x
+        // this.caret.align = x
         return this.moveCaret({ x, y })
       }
     }
@@ -361,8 +390,8 @@ class Editor {
 
   moveCaret ({ x, y }) {
     if (this.keys.has('Shift')) {
-      this.markBegin({ begin: this.caret.pos, end: this.caret.pos })
-    } else {
+      this.markBegin()
+    } else if (!this.keys.has('Control')) {
       this.markClear()
     }
     this.setCaret({ x, y })
@@ -735,14 +764,17 @@ class Editor {
     if (this.key) return this.insert(this.key)
     if (e.key === 'Enter') return this.insert('\n')
     if (e.key === 'Tab') return this.insert(' '.repeat(this.tabSize))
-    if (e.key === 'Backspace') return this.backspace()
+    if (!e.cmdKey && e.key === 'Backspace') return this.backspace()
+    if (!e.cmdKey && e.key === 'Delete') return this.delete()
 
     this.pressed = [e.cmdKey && 'Cmd', e.key].filter(Boolean).join(' ')
 
     // navigation
     switch (this.pressed) {
-      case 'Cmd ArrowLeft'  : this.moveByWords(-1); break
-      case 'Cmd ArrowRight' : this.moveByWords(+1); break
+      case 'Cmd ArrowLeft'  : this.moveByWords(-1); this.align(); break
+      case 'Cmd ArrowRight' : this.moveByWords(+1); this.align(); break
+      case 'Cmd Backspace'  : this.markBegin(); this.moveByWords(-1); this.markSet(); this.delete(); break
+      case 'Cmd Delete'     : this.markBegin(); this.moveByWords(+1); this.markSet(); this.delete(); this.align(); break
       case 'ArrowLeft'      : this.moveByChars(-1); break
       case 'ArrowRight'     : this.moveByChars(+1); break
       case 'ArrowUp'        : this.moveByLines(-1); break
