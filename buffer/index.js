@@ -341,7 +341,7 @@ Buffer.prototype.getLineOffset = function(y) {
 Buffer.prototype.getLongestLineLength = function() {
   // TODO: this should be part of the 'Parts' class
   // so lookup becomes O(1), currently lookup is O(n)
-  var max = 0, diff = 0, prev = 0, curr = 0
+  var max = this.getLineLength(this.loc()) + 1, diff = 0, prev = -1, curr = 0
   var parts = this.tokens.getCollection('lines').parts
   for (var i = 0; i < parts.length; i++) {
     var part = parts[i]

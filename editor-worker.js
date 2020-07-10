@@ -87,9 +87,10 @@ class Editor {
     this.text = ''
     this.lines = []
 
-    this.setText(this.setup.toString())
+    // this.setText(this.setup.toString())
+    this.setText('hello\n')
     this.moveCaret({ x: 0, y: 0 })
-    this.markSetArea({ begin: { x: 4, y: 1 }, end: { x: 9, y: 10 }})
+    // this.markSetArea({ begin: { x: 4, y: 1 }, end: { x: 9, y: 10 }})
   }
 
   scrollBy (deltaX, deltaY) {
