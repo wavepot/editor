@@ -773,7 +773,7 @@ class Editor {
 
     // navigation
     if (e.shiftKey && e.key !== 'Shift') this.markBegin()
-    else if (e.key !== 'Control') this.markClear()
+    else if (e.key !== 'Delete' && !e.cmdKey) this.markClear()
 
     switch (this.pressed) {
       case 'Cmd D':
@@ -819,7 +819,18 @@ class Editor {
           this.updateMark()
         }
         return
-      case 'Delete': case 'Cmd x': this.markClear(true); this.moveBeginOfLine(); this.markBegin(); this.moveByLines(+1); this.markSet(); this.delete(); break
+      case 'Delete': case 'Cmd x':
+        if (!this.mark.isEmpty()) {
+          this.delete()
+        } else {
+          this.markClear(true)
+          this.moveBeginOfLine()
+          this.markBegin()
+          this.moveByLines(+1)
+          this.markSet()
+          this.delete()
+        }
+        break
       case 'Cmd a'          : this.markClear(true); this.moveBeginOfFile(); this.markBegin(); this.moveEndOfFile(); this.markSet(); break
       case 'Cmd Backspace'  : this.markBegin(); e.shiftKey ? this.moveBeginOfLine() : this.moveByWords(-1); this.markSet(); this.delete(); break
       case 'Cmd Delete'     : this.markBegin(); e.shiftKey ? this.moveEndOfLine() : this.moveByWords(+1); this.markSet(); this.delete(); this.align(); break
