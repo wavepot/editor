@@ -82,8 +82,7 @@ const createEventsHandler = parent => {
 const createEditor = (width, height) => {
   let textarea
   let selectionText = ''
-  let historyCount = 1
-  let historyPointer = 1
+  let history = { length: 1, needle: 1 }
   let ignore = true
 
   const createTextArea = e => {
@@ -127,12 +126,16 @@ const createEditor = (width, height) => {
 
     textarea.oninput = e => {
       if (ignore) return
-      const count = +textarea.value
-      if (count !== historyPointer) {
-        historyPointer = count
-        textarea.selectionStart = -1
-        textarea.selectionEnd = -1
-        worker.postMessage({ call: 'onhistory', count })
+      const needle = +textarea.value
+      if (needle !== history.needle) {
+        if (needle >= 1) {
+          history.needle = needle
+          textarea.selectionStart = -1
+          textarea.selectionEnd = -1
+          worker.postMessage({ call: 'onhistory', needle })
+        } else {
+          document.execCommand('redo', false)
+        }
       }
       textarea.selectionStart = -1
       textarea.selectionEnd = -1
@@ -162,18 +165,23 @@ const createEditor = (width, height) => {
   worker.postMessage({ call: 'setup', outerCanvas, pixelRatio }, [outerCanvas])
 
   const methods = {
-    onhistory ({ count }) {
-      textarea.select?.()
-      historyCount = count
-      historyPointer = count
-      document.execCommand('insertText', false, count)
+    onhistory ({ length, needle }) {
+      const lastNeedle = history.needle
+      history.length = length
+      history.needle = needle
+      if (textarea && needle !== lastNeedle) {
+        textarea.select()
+        document.execCommand('insertText', false, needle)
+      }
     },
     onselection ({ text }) {
-      if (text.length) {
-        textarea.select?.()
-      } else {
-        textarea.selectionStart = -1
-        textarea.selectionEnd = -1
+      if (textarea) {
+        if (text.length) {
+          textarea.select()
+        } else {
+          textarea.selectionStart = -1
+          textarea.selectionEnd = -1
+        }
       }
       selectionText = text
     }
@@ -205,11 +213,11 @@ const createEditor = (width, height) => {
       createTextArea(e)
       textarea.focus()
       ignore = true
-      for (var i = 1; i <= historyCount; i++) {
+      for (var i = 1; i <= history.length; i++) {
         textarea.select()
         document.execCommand('insertText', false, i)
       }
-      for (var i = historyPointer; i < historyCount; i++) {
+      for (var i = history.needle; i < history.length; i++) {
         document.execCommand('undo', false)
       }
       ignore = false
@@ -217,9 +225,8 @@ const createEditor = (width, height) => {
       textarea.selectionEnd = -1
     }
     if (eventName === 'onblur') {
-      // if (ignore) return
       ignore = true
-      for (var i = 1; i <= historyPointer; i++) {
+      for (var i = 1; i <= history.needle; i++) {
         document.execCommand('undo', false)
       }
       removeTextArea()

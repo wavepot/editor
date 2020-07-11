@@ -2,6 +2,7 @@ import Regexp from './buffer/regexp.js'
 import Area from './buffer/area.js'
 import Point from './buffer/point.js'
 import Buffer from './buffer/index.js'
+import History from './history.js'
 
 const colors = {
   back: '#000',
@@ -31,6 +32,12 @@ class Editor {
   constructor () {
     this.pos = { x: 0, y: 0 }
     this.buffer = new Buffer
+    this.buffer.on('update', () => {
+      this.history.save()
+    })
+    this.buffer.on('before update', () => {
+      this.history.save()
+    })
     this.syncDraw = this.syncDraw.bind(this)
     this.animationScrollBegin = this.animationScrollBegin.bind(this)
     this.animationScrollFrame = this.animationScrollFrame.bind(this)
@@ -84,6 +91,7 @@ class Editor {
       height: this.line.height + this.line.padding / 2 + 2
     }
 
+    this.markActive = false
     this.mark = new Area({
       begin: new Point({ x: -1, y: -1 }),
       end: new Point({ x: -1, y: -1 })
@@ -92,7 +100,14 @@ class Editor {
     this.text = ''
     this.lines = []
 
-    this.history = { count: 1 }
+    this.history = new History(this)
+    this.history.on('save', () => {
+      postMessage({
+        call: 'onhistory',
+        length: this.history.log.length,
+        needle: this.history.needle
+      })
+    })
 
     this.setText(this.setup.toString())
     // this.setText('hello\n')
@@ -100,106 +115,15 @@ class Editor {
     // this.markSetArea({ begin: { x: 4, y: 1 }, end: { x: 9, y: 10 }})
   }
 
-  animateScrollBy (dx, dy, type) {
-    this.animationType = type ?? 'linear'
-
-    if (!this.animationRunning) {
-      this.animationRunning = true
-      this.animationFrame = requestAnimationFrame(this.animationScrollBegin)
-    }
-
-    var s = this.animationScrollTarget ?? this.pos
-    this.animationScrollTarget = new Point({
-      x: Math.max(-this.canvas.overscrollWidth, Math.min(0, s.x - dx)),
-      y: Math.max(-this.canvas.overscrollHeight, Math.min(0, s.y - dy))
-    })
-  }
-
-  animationScrollBegin () {
-    this.animationFrame = requestAnimationFrame(this.animationScrollFrame)
-
-    const s = this.pos
-    const t = this.animationScrollTarget
-    if (!t) return cancelAnimationFrame(this.animationScrollFrame)
-
-    let dx = t.x - s.x
-    let dy = t.y - s.y
-
-    dx = Math.sign(dx) * 5
-    dy = Math.sign(dy) * 5
-
-    this.scrollBy(dx, dy, true)
-  }
-
-  animationScrollFrame () {
-    let speed = 165
-    const s = this.pos
-    const t = this.animationScrollTarget
-    if (!t) return cancelAnimationFrame(this.animationScrollFrame)
-
-    let dx = t.x - s.x
-    let dy = t.y - s.y
-
-    const adx = Math.abs(dx)
-    const ady = Math.abs(dy)
-
-    if (ady >= this.canvas.height * 1.2) {
-      speed *= 2.65
-    }
-
-    if ((adx < .5 && ady < .5) || !this.animationRunning) {
-      this.animationRunning = false
-      this.pos.x = t.x
-      this.pos.y = t.y
-      this.animationScrollTarget = null
-      this.draw()
-      return
-    }
-
-    this.animationFrame = requestAnimationFrame(this.animationScrollFrame)
-
-    switch (this.animationType) {
-      case 'linear':
-        if (adx < speed * 1.9) dx = dx * (adx < speed * .65 ? adx < 9 ? .296 : .4 : .515)
-        else dx = Math.sign(dx) * speed
-
-        if (ady < speed * 1.9) dy = dy * (ady < speed * .65 ? ady < 9 ? .296 : .4 : .515)
-        else dy = Math.sign(dy) * speed
-
-        break
-      case 'ease':
-        dx *= 0.5
-        dy *= 0.5
-        break
-    }
-
-    this.scrollBy(dx, dy, true)
-  }
-
-  scrollBy (deltaX, deltaY, sync = false) {
-    this.pos.x += deltaX
-    this.pos.y += deltaY
-    this.pos.x = Math.max(
-      -this.canvas.overscrollWidth,
-      Math.min(0, this.pos.x)
-    )
-    this.pos.y = Math.max(
-      -this.canvas.overscrollHeight,
-      Math.min(0, this.pos.y)
-    )
-    if (sync) this.syncDraw()
-    else this.draw()
-  }
-
   erase (moveByChars = 0) {
-    if (this.mark.active) {
-      // this.history.save(true);
+    if (this.markActive) {
+      this.history.save(true)
       const area = this.mark.get()
       this.moveCaret(area.begin)
       this.buffer.removeArea(area)
       this.markClear(true)
     } else {
-      // this.history.save();
+      this.history.save()
       if (moveByChars) this.moveByChars(moveByChars)
       this.buffer.removeCharAtPoint(this.caret.pos)
     }
@@ -215,7 +139,7 @@ class Editor {
 
   delete () {
     if (this.isEndOfFile()) {
-      if (this.mark.active && !this.isBeginOfFile()) return this.backspace()
+      if (this.markActive && !this.isBeginOfFile()) return this.backspace()
       return
     }
     this.erase()
@@ -223,14 +147,14 @@ class Editor {
 
   backspace () {
     if (this.isBeginOfFile()) {
-      if (this.mark.active && !this.isEndOfFile()) return this.delete()
+      if (this.markActive && !this.isEndOfFile()) return this.delete()
       return
     }
     this.erase(-1)
   }
 
   insert (text) {
-    if (this.mark.active) this.delete()
+    if (this.markActive) this.delete()
 
     // this.emit('input', text, this.caret.copy(), this.mark.copy(), this.mark.active);
 
@@ -277,8 +201,8 @@ class Editor {
   }
 
   markBegin (area) {
-    if (!this.mark.active) {
-      this.mark.active = true
+    if (!this.markActive) {
+      this.markActive = true
       if (area) {
         this.mark.set(area)
       } else if (area !== false || this.mark.begin.x === -1) {
@@ -289,7 +213,7 @@ class Editor {
   }
 
   markSet () {
-    if (this.mark.active) {
+    if (this.markActive) {
       this.mark.end.set(this.caret.pos)
       this.updateMark()
       this.draw()
@@ -303,11 +227,11 @@ class Editor {
   }
 
   markClear (force) {
-    if (this.keys.has('Shift') && !force || !this.mark.active) return
+    if (this.keys.has('Shift') && !force || !this.markActive) return
 
     postMessage({ call: 'onselection', text: '' })
 
-    this.mark.active = false
+    this.markActive = false
     this.mark.set({
       begin: new Point({ x: -1, y: -1 }),
       end: new Point({ x: -1, y: -1 })
@@ -821,7 +745,7 @@ class Editor {
   syncDraw () {
     this.clear()
     this.drawScrollbars()
-    if (this.mark.active) this.drawMark()
+    if (this.markActive) this.drawMark()
     if (this.hasFocus) this.drawCaret()
     this.drawText()
     this.drawGutter()
@@ -830,6 +754,97 @@ class Editor {
   draw () {
     cancelAnimationFrame(this.drawAnimFrame)
     this.drawAnimFrame = requestAnimationFrame(this.syncDraw)
+  }
+
+  scrollBy (deltaX, deltaY, sync = false) {
+    this.pos.x += deltaX
+    this.pos.y += deltaY
+    this.pos.x = Math.max(
+      -this.canvas.overscrollWidth,
+      Math.min(0, this.pos.x)
+    )
+    this.pos.y = Math.max(
+      -this.canvas.overscrollHeight,
+      Math.min(0, this.pos.y)
+    )
+    if (sync) this.syncDraw()
+    else this.draw()
+  }
+
+  animateScrollBy (dx, dy, type) {
+    this.animationType = type ?? 'linear'
+
+    if (!this.animationRunning) {
+      this.animationRunning = true
+      this.animationFrame = requestAnimationFrame(this.animationScrollBegin)
+    }
+
+    var s = this.animationScrollTarget ?? this.pos
+    this.animationScrollTarget = new Point({
+      x: Math.max(-this.canvas.overscrollWidth, Math.min(0, s.x - dx)),
+      y: Math.max(-this.canvas.overscrollHeight, Math.min(0, s.y - dy))
+    })
+  }
+
+  animationScrollBegin () {
+    this.animationFrame = requestAnimationFrame(this.animationScrollFrame)
+
+    const s = this.pos
+    const t = this.animationScrollTarget
+    if (!t) return cancelAnimationFrame(this.animationScrollFrame)
+
+    let dx = t.x - s.x
+    let dy = t.y - s.y
+
+    dx = Math.sign(dx) * 5
+    dy = Math.sign(dy) * 5
+
+    this.scrollBy(dx, dy, true)
+  }
+
+  animationScrollFrame () {
+    let speed = 165
+    const s = this.pos
+    const t = this.animationScrollTarget
+    if (!t) return cancelAnimationFrame(this.animationScrollFrame)
+
+    let dx = t.x - s.x
+    let dy = t.y - s.y
+
+    const adx = Math.abs(dx)
+    const ady = Math.abs(dy)
+
+    if (ady >= this.canvas.height * 1.2) {
+      speed *= 2.65
+    }
+
+    if ((adx < .5 && ady < .5) || !this.animationRunning) {
+      this.animationRunning = false
+      this.pos.x = t.x
+      this.pos.y = t.y
+      this.animationScrollTarget = null
+      this.draw()
+      return
+    }
+
+    this.animationFrame = requestAnimationFrame(this.animationScrollFrame)
+
+    switch (this.animationType) {
+      case 'linear':
+        if (adx < speed * 1.9) dx = dx * (adx < speed * .65 ? adx < 9 ? .296 : .4 : .515)
+        else dx = Math.sign(dx) * speed
+
+        if (ady < speed * 1.9) dy = dy * (ady < speed * .65 ? ady < 9 ? .296 : .4 : .515)
+        else dy = Math.sign(dy) * speed
+
+        break
+      case 'ease':
+        dx *= 0.5
+        dy *= 0.5
+        break
+    }
+
+    this.scrollBy(dx, dy, true)
   }
 
   onmouseenter () {}
@@ -1008,12 +1023,20 @@ class Editor {
 
   onpaste ({ text }) {
     this.insert(text)
-    postMessage({ call: 'onhistory', count: ++this.history.count })
   }
 
-  onhistory ({ count }) {
-    if (count !== this.history.count) {
-      this.history.count = count
+  onhistory ({ needle }) {
+    if (needle !== this.history.needle) {
+      if (needle < this.history.needle) {
+        this.history.undo(needle)
+      } else if (needle > this.history.needle) {
+        this.history.redo(needle)
+      }
+      this.updateSizes()
+      this.updateText()
+      this.updateMark()
+      this.keepCaretInView()
+      this.draw()
     }
   }
 

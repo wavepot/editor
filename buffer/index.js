@@ -69,7 +69,7 @@ Buffer.prototype.setText = function(text) {
 
 Buffer.prototype.insert =
 Buffer.prototype.insertTextAtPoint = function(p, text, noLog) {
-  this.emit('before update');
+  if (!noLog) this.emit('before update');
 
   text = normalizeEOL(text);
 
@@ -86,25 +86,16 @@ Buffer.prototype.insertTextAtPoint = function(p, text, noLog) {
   this.prefix.index(after);
   this.tokens.update(offsetRange, after, length);
   this.segments.clearCache(offsetRange[0]);
+  if (!noLog) this.appendLog('insert', [point.offset, point.offset + text.length], text)
 
-  // if (!noLog) {
-  //   var lastLog = this.log[this.log.length - 1];
-  //   if (lastLog && lastLog[0] === 'insert' && lastLog[1][1] === point.offset) {
-  //     lastLog[1][1] += text.length;
-  //     lastLog[2] += text;
-  //   } else {
-  //     this.log.push(['insert', [point.offset, point.offset + text.length], text]);
-  //   }
-  // }
-
-  this.emit('update', range, shift, before, after);
+  if (!noLog) this.emit('update', range, shift, before, after);
 
   return text.length;
 };
 
 Buffer.prototype.remove =
 Buffer.prototype.removeOffsetRange = function(o, noLog) {
-  this.emit('before update');
+  if (!noLog) this.emit('before update');
 
   var a = this.getOffsetPoint(o[0]);
   var b = this.getOffsetPoint(o[1]);
@@ -121,19 +112,30 @@ Buffer.prototype.removeOffsetRange = function(o, noLog) {
   this.prefix.index(after);
   this.tokens.update(offsetRange, after, length);
   this.segments.clearCache(offsetRange[0]);
+  if (!noLog) this.appendLog('remove', o, text)
 
-  // if (!noLog) {
-  //   var lastLog = this.log[this.log.length - 1];
-  //   if (lastLog && lastLog[0] === 'remove' && lastLog[1][0] === o[1]) {
-  //     lastLog[1][0] -= text.length;
-  //     lastLog[2] = text + lastLog[2];
-  //   } else {
-  //     this.log.push(['remove', o, text]);
-  //   }
-  // }
-
-  this.emit('update', range, shift, before, after);
+  if (!noLog) this.emit('update', range, shift, before, after);
 };
+
+Buffer.prototype.appendLog = function(type, offsets, text) {
+  if (type === 'insert') {
+    var lastLog = this.log[this.log.length - 1];
+    if (lastLog && lastLog[0] === 'insert' && lastLog[1][1] === offsets[0]) {
+      lastLog[1][1] += text.length;
+      lastLog[2] += text;
+    } else {
+      this.log.push(['insert', offsets, text]);
+    }
+  } else if (type === 'remove') {
+    var lastLog = this.log[this.log.length - 1];
+    if (lastLog && lastLog[0] === 'remove' && lastLog[1][0] === offsets[1]) {
+      lastLog[1][0] -= text.length;
+      lastLog[2] = text + lastLog[2];
+    } else {
+      this.log.push(['remove', offsets, text]);
+    }
+  }
+}
 
 Buffer.prototype.removeArea = function(area) {
   var offsets = this.getAreaOffsetRange(area);
