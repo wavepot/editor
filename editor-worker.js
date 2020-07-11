@@ -31,6 +31,9 @@ class Editor {
   constructor () {
     this.pos = { x: 0, y: 0 }
     this.buffer = new Buffer
+    this.syncDraw = this.syncDraw.bind(this)
+    this.animationScrollBegin = this.animationScrollBegin.bind(this)
+    this.animationScrollFrame = this.animationScrollFrame.bind(this)
   }
 
   async setup (data) {
@@ -65,6 +68,8 @@ class Editor {
 
     this.sizes = { loc: -1, longestLineLength: -1 }
 
+    this.hasFocus = false
+
     this.tabSize = 2
 
     this.page = {}
@@ -95,9 +100,85 @@ class Editor {
     // this.markSetArea({ begin: { x: 4, y: 1 }, end: { x: 9, y: 10 }})
   }
 
-  scrollBy (deltaX, deltaY) {
+  animateScrollBy (dx, dy, type) {
+    this.animationType = type ?? 'linear'
+
+    if (!this.animationRunning) {
+      this.animationRunning = true
+      this.animationFrame = requestAnimationFrame(this.animationScrollBegin)
+    }
+
+    var s = this.animationScrollTarget ?? this.pos
+    this.animationScrollTarget = new Point({
+      x: Math.max(-this.canvas.overscrollWidth, Math.min(0, s.x - dx)),
+      y: Math.max(-this.canvas.overscrollHeight, Math.min(0, s.y - dy))
+    })
+  }
+
+  animationScrollBegin () {
+    this.animationFrame = requestAnimationFrame(this.animationScrollFrame)
+
+    const s = this.pos
+    const t = this.animationScrollTarget
+    if (!t) return cancelAnimationFrame(this.animationScrollFrame)
+
+    let dx = t.x - s.x
+    let dy = t.y - s.y
+
+    dx = Math.sign(dx) * 5
+    dy = Math.sign(dy) * 5
+
+    this.scrollBy(dx, dy, true)
+  }
+
+  animationScrollFrame () {
+    let speed = 175
+    const s = this.pos
+    const t = this.animationScrollTarget
+    if (!t) return cancelAnimationFrame(this.animationScrollFrame)
+
+    let dx = t.x - s.x
+    let dy = t.y - s.y
+
+    const adx = Math.abs(dx)
+    const ady = Math.abs(dy)
+
+    if (ady >= this.canvas.height * 1.2) {
+      speed *= 2.65
+    }
+
+    if ((adx < .5 && ady < .5) || !this.animationRunning) {
+      this.animationRunning = false
+      this.pos.x = t.x
+      this.pos.y = t.y
+      this.animationScrollTarget = null
+      this.draw()
+      return
+    }
+
+    this.animationFrame = requestAnimationFrame(this.animationScrollFrame)
+
+    switch (this.animationType) {
+      case 'linear':
+        if (adx < speed*1.6) dx = dx * (adx < speed ? adx < 10 ? .62 : .37 : .77)
+        else dx = Math.sign(dx) * speed
+
+        if (ady < speed*1.6) dy = dy * (ady < speed ? ady < 10 ? .62 : .37 : .77)
+        else dy = Math.sign(dy) * speed
+
+        break
+      case 'ease':
+        dx *= 0.5
+        dy *= 0.5
+        break
+    }
+
+    this.scrollBy(dx, dy, true)
+  }
+
+  scrollBy (deltaX, deltaY, sync = false) {
     this.pos.x += deltaX
-    this.pos.y -= deltaY
+    this.pos.y += deltaY
     this.pos.x = Math.max(
       -this.canvas.overscrollWidth,
       Math.min(0, this.pos.x)
@@ -106,7 +187,8 @@ class Editor {
       -this.canvas.overscrollHeight,
       Math.min(0, this.pos.y)
     )
-    this.draw()
+    if (sync) this.syncDraw()
+    else this.draw()
   }
 
   erase (moveByChars = 0) {
@@ -532,7 +614,8 @@ class Editor {
 
   applyFont (ctx) {
     ctx.textBaseline = 'top'
-    ctx.font = 'normal 8.78pt Liberation Mono'
+    ctx.font = 'normal 9pt Liberation Mono'
+    // ctx.font = 'normal 8.78pt Liberation Mono'
   }
 
   updateGutter () {
@@ -735,29 +818,31 @@ class Editor {
     )
   }
 
+  syncDraw () {
+    this.clear()
+    this.drawScrollbars()
+    if (this.mark.active) this.drawMark()
+    if (this.hasFocus) this.drawCaret()
+    this.drawText()
+    this.drawGutter()
+  }
+
   draw () {
-    cancelAnimationFrame(this.animFrame)
-    this.animFrame = requestAnimationFrame(() => {
-      this.clear()
-      this.drawScrollbars()
-      if (this.mark.active) this.drawMark()
-      this.drawCaret()
-      this.drawText()
-      this.drawGutter()
-    })
+    cancelAnimationFrame(this.drawAnimFrame)
+    this.drawAnimFrame = requestAnimationFrame(this.syncDraw)
   }
 
   onmouseenter () {}
-
+  onmouseover () {}
   onmouseout () {}
 
   onmousewheel ({ deltaX, deltaY }) {
-    deltaX *= 280
-    deltaY *= 600
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      this.scrollBy(deltaX, 0)
+    deltaX *= 320
+      this.animateScrollBy(deltaX, 0, 'linear')
     } else {
-      this.scrollBy(0, deltaY)
+    deltaY *= 800
+      this.animateScrollBy(0, deltaY, 'linear')
     }
   }
 
@@ -933,11 +1018,15 @@ class Editor {
   }
 
   onblur () {
+    this.hasFocus = false
     this.keys.clear()
+    this.draw()
   }
 
   onfocus () {
+    this.hasFocus = true
     this.keys.clear()
+    this.draw()
   }
 
   onresize () {

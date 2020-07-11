@@ -1,26 +1,20 @@
 const isWithin = (e, { left, top, right, bottom }) => {
-  if (e.clientX >= left && e.clientX <= right
-  && e.clientY >= top && e.clientY <= bottom) {
+  if ((e.clientX ?? e.pageX) >= left && (e.clientX ?? e.pageX) <= right
+  && (e.clientY ?? e.pageY) >= top && (e.clientY ?? e.pageY) <= bottom) {
     return true
   }
 }
 const createEventsHandler = parent => {
-  let focusTarget
-  let hoverTarget
-
-  let lastMoveEvent
+  const targets = {}
 
   const handlerMapper = (target, type) => eventName => {
     const handler = e => {
-      if (type === 'MouseEvent') {
-        if (eventName === 'onmousemove') {
-          lastMoveEvent = e
+      if (type === 'mouse') {
+        if (targets.hover && isWithin(e, targets.hover)) {
+          return targets.hover.el.handleEvent(type, eventName, e)
         }
-        if (hoverTarget && isWithin(lastMoveEvent, hoverTarget)) {
-          return hoverTarget.el['handle' + type](eventName, e)
-        }
-      } else if (focusTarget) {
-        return focusTarget.el['handle' + type](eventName, e)
+      } else if (targets.focus) {
+        return targets.focus.el.handleEvent(type, eventName, e)
       }
     }
     target.addEventListener(
@@ -34,42 +28,40 @@ const createEventsHandler = parent => {
   const mouseEventHandlers = [
     'onmousewheel',
     'onmousedown',
+    'onmouseover',
     'onmousemove',
-  ].map(handlerMapper(parent, 'MouseEvent'))
+  ].map(handlerMapper(parent, 'mouse'))
 
   const keyEventHandlers = [
     'onkeydown',
     'onkeyup',
-  ].map(handlerMapper(parent, 'KeyEvent'))
+  ].map(handlerMapper(parent, 'key'))
 
   const windowEventHandlers = [
     'onblur',
     'onfocus',
     'onresize',
-  ].map(handlerMapper(window, 'WindowEvent'))
+  ].map(handlerMapper(window, 'window'))
 
   return {
-    setHoverTarget (target, e) {
-      const previous = hoverTarget
-      hoverTarget = target
-      if (previous !== hoverTarget) {
+    setTarget (type, target, e) {
+      const previous = targets[type]
+      targets[type] = target
+      if (previous !== target) {
+        const focus = type === 'focus'
         if (previous) {
-          previous.el.handleMouseEvent('onmouseout', e)
+          previous.el.handleEvent(
+            focus ? 'window' : 'mouse',
+            focus ? 'onblur' : 'onmouseout',
+            e
+          )
         }
-        if (hoverTarget) {
-          hoverTarget.el.handleMouseEvent('onmouseenter', e)
-        }
-      }
-    },
-    setFocusTarget (target, e) {
-      const previous = focusTarget
-      focusTarget = target
-      if (previous !== focusTarget) {
-        if (previous) {
-          previous.el.handleWindowEvent('onblur', e)
-        }
-        if (focusTarget) {
-          focusTarget.el.handleWindowEvent('onfocus', e)
+        if (target) {
+          target.el.handleEvent(
+            focus ? 'window' : 'mouse',
+            focus ? 'onfocus' : 'onmouseenter',
+            e
+          )
         }
       }
     },
@@ -97,13 +89,14 @@ const createEditor = (width, height) => {
   const createTextArea = e => {
     textarea = document.createElement('textarea')
     textarea.style.position = 'absolute'
-    textarea.style.left = e.clientX + 'px'
-    textarea.style.top = e.clientY + 'px'
+    textarea.style.left = (e.clientX ?? e.pageX) + 'px'
+    textarea.style.top = (e.clientY ?? e.pageY) + 'px'
     textarea.style.width = '100px'
     textarea.style.height = '100px'
     textarea.style.marginLeft = '-50px'
     textarea.style.marginTop = '-50px'
     textarea.style.opacity = 0
+    textarea.style.visibility = 'none'
     textarea.style.resize = 'none'
     textarea.autocapitalize = 'none'
     textarea.autocomplete = 'off'
@@ -143,6 +136,17 @@ const createEditor = (width, height) => {
       }
       textarea.selectionStart = -1
       textarea.selectionEnd = -1
+    }
+  }
+
+  const removeTextArea = () => {
+    if (textarea) {
+      document.body.removeChild(textarea)
+      textarea.oncut =
+      textarea.oncopy =
+      textarea.onpaste =
+      textarea.oninput = null
+      textarea = null
     }
   }
 
@@ -193,17 +197,9 @@ const createEditor = (width, height) => {
       ...data
     })
   }
-  const removeTextArea = () => {
-    if (textarea) {
-      document.body.removeChild(textarea)
-      textarea.oncut =
-      textarea.oncopy =
-      textarea.onpaste =
-      textarea.oninput = null
-      textarea = null
-    }
-  }
-  const handleWindowEvent = eventMapper((e, eventName) => {
+  const eventHandlers = {}
+  const handleEvent = (type, eventName, e) => eventHandlers[type](eventName, e)
+  eventHandlers.window = eventMapper((e, eventName) => {
     if (eventName === 'onfocus') {
       removeTextArea()
       createTextArea(e)
@@ -230,13 +226,11 @@ const createEditor = (width, height) => {
     }
     return {/* todo */}
   })
-  const handleMouseEvent = eventMapper((e, eventName) => {
-    if (eventName === 'onmouseenter') {
-      if (textarea) {
+  eventHandlers.mouse = eventMapper((e, eventName) => {
+    if (textarea) {
+      if (eventName === 'onmouseenter') {
         textarea.style.pointerEvents = 'all'
-      }
-    } else if (eventName === 'onmouseout') {
-      if (textarea) {
+      } else if (eventName === 'onmouseout') {
         textarea.style.pointerEvents = 'none'
       }
     }
@@ -258,7 +252,7 @@ const createEditor = (width, height) => {
       right: e.which === 3
     }
   })
-  const handleKeyEvent = eventMapper(e => {
+  eventHandlers.key = eventMapper(e => {
     const {
       key,
       which,
@@ -289,9 +283,7 @@ const createEditor = (width, height) => {
   return {
     canvas,
     worker,
-    handleKeyEvent,
-    handleMouseEvent,
-    handleWindowEvent
+    handleEvent,
   }
 }
 
@@ -320,18 +312,17 @@ const targets = editors.map(editor => ({
   ...editor.canvas.getBoundingClientRect().toJSON()
 }))
 
-window.addEventListener('mousedown', e => {
+const targetHandler = type => e => {
   let _target = null
   targets.forEach(target => {
     if (isWithin(e, target)) _target = target
   })
-  events.setFocusTarget(_target, e)
-})
+  events.setTarget(type, _target, e)
+}
 
-window.addEventListener('mousemove', e => {
-  let _target = null
-  targets.forEach(target => {
-    if (isWithin(e, target)) _target = target
-  })
-  events.setHoverTarget(_target, e)
-})
+const focusTargetHandler = targetHandler('focus')
+const hoverTargetHandler = targetHandler('hover')
+
+window.addEventListener('mousedown', focusTargetHandler, { passive: false })
+window.addEventListener('mousewheel', hoverTargetHandler, { passive: false })
+window.addEventListener('mousemove', hoverTargetHandler, { passive: false })
