@@ -126,6 +126,10 @@ class Editor {
       this.history.save()
       if (moveByChars) this.moveByChars(moveByChars)
       this.buffer.removeCharAtPoint(this.caret.pos)
+      const line = this.buffer.getLineText(this.caret.pos.y)
+      const right = line[this.caret.pos.x]
+      const hasRightSymbol = ['\'','"','`','}',']',')'].includes(right)
+      if (hasRightSymbol) this.buffer.removeCharAtPoint(this.caret.pos)
     }
 
     this.updateSizes()
@@ -160,7 +164,7 @@ class Editor {
 
     const line = this.buffer.getLineText(this.caret.pos.y)
     const right = line[this.caret.pos.x]
-    const hasRightSymbol = ['}',']',')'].includes(right)
+    const hasRightSymbol = ['\'','"','`','}',']',')'].includes(right)
 
     let indent = 0
     let hasLeftSymbol
@@ -186,7 +190,7 @@ class Editor {
 
     let length = 1
 
-    if (!(hasRightSymbol && ['}',']',')'].includes(text))) {
+    if (!(hasRightSymbol && ['\'','"','`','}',']',')'].includes(text))) {
       length = this.buffer.insert(this.caret.pos, text, null, true)
       this.updateSizes()
     }
@@ -196,6 +200,9 @@ class Editor {
     if ('{' === text) this.buffer.insert(this.caret.pos, '}')
     else if ('(' === text) this.buffer.insert(this.caret.pos, ')')
     else if ('[' === text) this.buffer.insert(this.caret.pos, ']')
+    else if ('\'' === text) this.buffer.insert(this.caret.pos, '\'')
+    else if ('"' === text) this.buffer.insert(this.caret.pos, '"')
+    else if ('`' === text) this.buffer.insert(this.caret.pos, '`')
 
     this.updateText()
   }
@@ -415,6 +422,8 @@ class Editor {
   }
 
   keepCaretInView () {
+    if (this.animationRunning) return
+
     const p = this.caret.pos
 
     const left = -(this.pos.x / this.canvas.pixelRatio)
@@ -974,7 +983,7 @@ class Editor {
             this.updateMark()
           }
         } else {
-          this.scrollBy(0, -(this.line.height) * this.canvas.pixelRatio)
+          this.scrollBy(0, (this.line.height) * this.canvas.pixelRatio)
         }
         break
       case 'Cmd ArrowDown':
@@ -994,15 +1003,15 @@ class Editor {
             this.updateMark()
           }
         } else {
-          this.scrollBy(0, +(this.line.height) * this.canvas.pixelRatio)
+          this.scrollBy(0, -(this.line.height) * this.canvas.pixelRatio)
         }
         break
       case 'ArrowLeft'      : this.moveByChars(-1); break
       case 'ArrowRight'     : this.moveByChars(+1); break
       case 'ArrowUp'        : this.moveByLines(-1); break
       case 'ArrowDown'      : this.moveByLines(+1); break
-      case 'PageUp'         : this.scrollBy(0, -this.page.height); this.moveByLines(-this.page.lines); break
-      case 'PageDown'       : this.scrollBy(0, +this.page.height); this.moveByLines(+this.page.lines); break
+      case 'PageUp'         : this.keepCaretInView(); this.animateScrollBy(0, -this.page.height, 'ease'); this.moveByLines(-this.page.lines); break
+      case 'PageDown'       : this.keepCaretInView(); this.animateScrollBy(0, +this.page.height, 'ease'); this.moveByLines(+this.page.lines); break
       case 'Home'           : this.moveBeginOfLine(true); break
       case 'End'            : this.moveEndOfLine(); break
     }
