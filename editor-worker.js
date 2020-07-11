@@ -132,7 +132,7 @@ class Editor {
   }
 
   animationScrollFrame () {
-    let speed = 175
+    let speed = 165
     const s = this.pos
     const t = this.animationScrollTarget
     if (!t) return cancelAnimationFrame(this.animationScrollFrame)
@@ -160,10 +160,10 @@ class Editor {
 
     switch (this.animationType) {
       case 'linear':
-        if (adx < speed*1.6) dx = dx * (adx < speed ? adx < 10 ? .62 : .37 : .77)
+        if (adx < speed * 1.9) dx = dx * (adx < speed * .65 ? adx < 9 ? .296 : .4 : .515)
         else dx = Math.sign(dx) * speed
 
-        if (ady < speed*1.6) dy = dy * (ady < speed ? ady < 10 ? .62 : .37 : .77)
+        if (ady < speed * 1.9) dy = dy * (ady < speed * .65 ? ady < 9 ? .296 : .4 : .515)
         else dy = Math.sign(dy) * speed
 
         break
