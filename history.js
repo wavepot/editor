@@ -90,7 +90,7 @@ History.prototype.checkout = function (type, n) {
         if ('undo' === type) {
           this.editor.buffer.insert(this.editor.buffer.getOffsetPoint(offsets[0]), text, true)
         } else {
-          this.editor.buffer.remove(offsetRange, true)
+          this.editor.buffer.remove(offsets, true)
         }
         break
     }

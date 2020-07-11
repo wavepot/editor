@@ -294,30 +294,53 @@ Buffer.prototype.wordAreaAtPoint = function(p, inclusive) {
   return area;
 };
 
-Buffer.prototype.moveAreaByLines = function(y, area) {
-  if (area.begin.y + y < 0 || area.end.y + y > this.loc()) return false;
+Buffer.prototype.moveAreaByLines = function(dy, area) {
+  if (area.begin.y + dy < 0 || area.end.y + dy > this.loc()) return false;
 
-  area.begin.x = 0
-  area.end.x = this.getLine(area.end.y).length
+  let x = 0
+  let y = area.begin.y + dy
 
-  var offsets = this.getAreaOffsetRange(area);
+  let swap_a = false
+  let swap_b = false
 
-  var x = 0
+  area.end.x = area.begin.x = 0
+  area.end.y = area.end.y + 1
 
-  if (y > 0 && area.begin.y > 0 || area.end.y === this.loc()) {
-    area.begin.y -= 1
-    area.begin.x = this.getLine(area.begin.y).length
-    offsets = this.getAreaOffsetRange(area)
+  if (dy > 0 && area.end.y === this.loc()) {
+    if (area.begin.y === 0) {
+      area.begin.x = 0
+      area.end.x = 0
+      x = Infinity
+      swap_b = true
+    } else {
+      area.end.y = this.loc()
+      y = area.begin.y + dy
+      x = Infinity
+      swap_b = true
+    }
+  } else if (dy < 0 && area.end.y > this.loc() && y > 0) {
+    area.begin.y = y
+    area.begin.x = this.getLineLength(area.begin.y)
+    y = area.begin.y - 1
     x = Infinity
-  } else {
-    offsets[1] += 1
+  } else if (dy < 0 && y === 0 && area.end.y > this.loc()) {
+    area.begin.y -= 1
+    area.begin.x = this.getLineLength(area.begin.y)
+    swap_a = true
   }
 
-  var text = this.text.getRange(offsets)
+  let offsets = this.getAreaOffsetRange(area)
+  let text = this.text.getRange(offsets)
 
-  this.removeOffsetRange(offsets)
+  if (swap_a) {
+    text = text.slice(1) + text[0]
+  }
+  if (swap_b) {
+    text = text.slice(-1) + text.slice(0, -1)
+  }
 
-  this.insert({ x: x, y:area.begin.y + y }, text);
+  this.remove(offsets)
+  this.insert({ x, y }, text);
 
   return true;
 };
@@ -326,7 +349,7 @@ Buffer.prototype.getAreaOffsetRange = function(area) {
   var begin = this.getPoint(area.begin)
   var end = this.getPoint(area.end)
   var range = [
-    begin.offset,
+    Math.max(0, begin.offset),
     end.y < area.end.y ? end.line.offsetRange[1] : end.offset
   ];
   return range;

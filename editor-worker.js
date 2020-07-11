@@ -109,6 +109,7 @@ class Editor {
       })
     })
 
+    // this.setText('abc\ndef\nghi\nklm')
     this.setText(this.setup.toString())
     // this.setText('hello\n')
     this.moveCaret({ x: 0, y: 0 })
@@ -581,7 +582,7 @@ class Editor {
       y = this.canvas.padding + i * this.line.height
 
       text.fillText(
-        this.buffer.getLineText(i),
+        this.buffer.getLineText(i).replace(/\t/g, ' '.repeat(this.tabSize)),
         this.gutter.padding,
         y
       )
