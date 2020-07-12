@@ -13,6 +13,16 @@ Regexp.create = function(names, flags, fn) {
   );
 };
 
+Regexp.join = function(regexps, flags) {
+  return new RegExp(
+    regexps
+    .map(n => 'string' === typeof n ? [n, Regexp.types[n]] : n)
+    .map(r => '(?<' + r[0].replace(/\s/g, '_') + '>' + r[1].toString().slice(1,-1) + ')')
+    .join('|'),
+    flags
+  )
+}
+
 Regexp.types = {
   'tokens': /.+?\b|.\B|\b.+?/,
   'words': /[a-zA-Z0-9]{1,}/,

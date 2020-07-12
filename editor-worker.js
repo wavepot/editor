@@ -3,6 +3,7 @@ import Area from './buffer/area.js'
 import Point from './buffer/point.js'
 import Buffer from './buffer/index.js'
 import History from './history.js'
+import Syntax from './syntax.js'
 
 const colors = {
   back: '#000',
@@ -13,6 +14,27 @@ const colors = {
   scrollbar: '#555',
   lineNumbers: '#888'
 }
+
+const themes = {
+  monokai: {
+    ...colors,
+    back: '#272822',
+    text: '#F8F8F2',
+    symbol: '#F8F8F2',
+    operator: '#DF2266',
+    params: '#FD971F',
+    builtin: '#61CCE0',
+    declare: '#61CCE0',
+    function: '#A0D92E',
+    keyword: '#DF2266',
+    special: '#AB7FFB',
+    comment: '#75715E',
+    string: '#E6DB74',
+    template_string: '#E6DB74',
+  }
+}
+
+const theme = themes.monokai
 
 const lines = text => text.split(/\n/g)
 const NONSPACE = /[^\s]/g
@@ -39,6 +61,7 @@ class Editor {
     this.buffer.on('before update', () => {
       this.history.save()
     })
+    this.syntax = new Syntax()
     this.syncDraw = this.syncDraw.bind(this)
     this.animationScrollBegin = this.animationScrollBegin.bind(this)
     this.animationScrollFrame = this.animationScrollFrame.bind(this)
@@ -594,16 +617,34 @@ class Editor {
     text.clearRect(0, 0, this.canvas.text.width, this.canvas.text.height)
     text.fillStyle = colors.text
 
-    let y = 0, loc = this.sizes.loc
-    for (let i = 0; i <= loc; i++) {
+    const pieces = this.syntax.highlight(this.buffer.toString())
+
+    let i = 0, x = 0, y = 0, lastNewLine = 0
+    for (const [type, string, index] of pieces.values()) {
       y = this.canvas.padding + i * this.line.height
 
-      text.fillText(
-        this.buffer.getLineText(i).replace(/\t/g, ' '.repeat(this.tabSize)),
-        this.gutter.padding,
-        y
-      )
+      if (type === 'newline') {
+        lastNewLine = index
+        i++
+        continue
+      }
+
+      text.fillStyle = theme[type]
+      x = (index - lastNewLine) * this.char.width + this.gutter.padding
+
+      text.fillText(string, x, y)
     }
+
+    // let y = 0, loc = this.sizes.loc
+    // for (let i = 0; i < loc; i++) {
+
+    //   text.fillText(
+    //     // lines[i].replace(/\t/g, ' '.repeat(this.tabSize)),
+    //     this.buffer.getLineText(i).replace(/\t/g, ' '.repeat(this.tabSize)),
+    //     this.gutter.padding,
+    //     y
+    //   )
+    // }
   }
 
   updateMark () {
