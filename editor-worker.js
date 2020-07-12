@@ -114,9 +114,9 @@ class Editor {
 
     // this.setText('abc\ndef\nghi\nklm')
     // this.setText('\t\tabqwe\tqrwrrec\tc\n\tdqweqweef\n\t\t\t\t     ghi\nklm')
-    this.setText('\t\tabc\tdef')
+    // this.setText('\t\tabc\tdef')
       // + this.setup.toString())
-    // this.setText(this.setup.toString())
+    this.setText(this.setup.toString())
     // this.setText('hello\n')
     this.moveCaret({ x: 0, y: 0 })
     // this.markSetArea({ begin: { x: 4, y: 1 }, end: { x: 9, y: 10 }})
@@ -901,7 +901,7 @@ class Editor {
     }
   }
 
-  onmousedown ({ clientX, clientY }) {
+  setCaretByMouse ({ clientX, clientY }) {
     const y = Math.max(
       0,
       Math.min(
@@ -932,11 +932,27 @@ class Editor {
     )
 
     this.setCaret({ x, y })
-    this.draw()
   }
 
-  onmousemove ({ clientX, clientY }) {
-    // TODO
+  onmouseup () {}
+
+  onmousedown (e) {
+    if (e.left) {
+      this.markClear()
+      this.updateMark()
+      this.setCaretByMouse(e)
+      this.markBegin()
+      this.draw()
+    }
+  }
+
+  onmousemove (e) {
+    if (e.left) {
+      this.setCaretByMouse(e)
+      this.markSet()
+      this.keepCaretInView()
+      this.draw()
+    }
   }
 
   onkeydown (e) {

@@ -10,6 +10,11 @@ const createEventsHandler = parent => {
   const handlerMapper = (target, type) => eventName => {
     const handler = e => {
       if (type === 'mouse') {
+        if (eventName === 'onmouseup') targets.forceWithin = null
+        if (eventName === 'onmousedown') targets.forceWithin = targets.hover
+        if (targets.forceWithin) {
+          return targets.forceWithin.el.handleEvent(type, eventName, e)
+        }
         if (targets.hover && isWithin(e, targets.hover)) {
           return targets.hover.el.handleEvent(type, eventName, e)
         }
@@ -28,6 +33,7 @@ const createEventsHandler = parent => {
   const mouseEventHandlers = [
     'onmousewheel',
     'onmousedown',
+    'onmouseup',
     'onmouseover',
     'onmousemove',
   ].map(handlerMapper(parent, 'mouse'))
