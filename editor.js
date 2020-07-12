@@ -160,9 +160,7 @@ const createEditor = (width, height) => {
   canvas.style.width = `${width}px`
   canvas.style.height = `${height}px`
 
-  const outerCanvas = canvas.transferControlToOffscreen()
   const worker = new Worker('./editor-worker.js', { type: 'module' })
-  worker.postMessage({ call: 'setup', outerCanvas, pixelRatio }, [outerCanvas])
 
   const methods = {
     onhistory ({ length, needle }) {
@@ -241,8 +239,9 @@ const createEditor = (width, height) => {
         textarea.style.pointerEvents = 'none'
       }
     }
-    const clientX = e.clientX
-    const clientY = e.clientY
+    const pos = canvas.getBoundingClientRect()
+    const clientX = e.clientX ?? e.pageX
+    const clientY = e.clientY ?? e.pageY
     const deltaX = (e.deltaX || 0) / 1000
     const deltaY = (e.deltaY || 0) / 1000
     if (textarea) {
@@ -250,8 +249,8 @@ const createEditor = (width, height) => {
       textarea.style.top = clientY + 'px'
     }
     return {
-      clientX,
-      clientY,
+      clientX: clientX - pos.x,
+      clientY: clientY - pos.y,
       deltaX,
       deltaY,
       left: e.which === 1,
@@ -291,6 +290,11 @@ const createEditor = (width, height) => {
     canvas,
     worker,
     handleEvent,
+    setup () {
+      const pos = canvas.getBoundingClientRect().toJSON()
+      const outerCanvas = canvas.transferControlToOffscreen()
+      worker.postMessage({ call: 'setup', pos, outerCanvas, pixelRatio }, [outerCanvas])
+    }
   }
 }
 
@@ -301,15 +305,16 @@ const editors = []
 const create = (width, height) => {
   const editor = createEditor(width, height)
   document.body.appendChild(editor.canvas)
+  editor.setup()
   editors.push(editor)
 }
 
 // create(window.innerWidth - 260, 200)
 // create(window.innerWidth, 200)
-// create(200, 200)
+create(200, 200)
 create(300, window.innerHeight)
-create(300, window.innerHeight)
-create(300, window.innerHeight)
+// create(300, window.innerHeight)
+// create(300, window.innerHeight)
 // create(window.innerWidth, window.innerHeight)
 // for (let i = 0; i < 40; i++) create(70, 70)
 

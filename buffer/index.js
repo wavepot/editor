@@ -364,19 +364,31 @@ Buffer.prototype.getLineOffset = function(y) {
   return offset;
 };
 
-Buffer.prototype.getLongestLineLength = function() {
+Buffer.prototype.getLongestLine = function() {
+  return this.getLongestLineLength(true)
+}
+
+Buffer.prototype.getLongestLineLength = function(withLineNumber) {
   // TODO: this should be part of the 'Parts' class
   // so lookup becomes O(1), currently lookup is O(n)
-  var max = this.getLineLength(this.loc()) + 1, diff = 0, prev = -1, curr = 0
+  var max = this.getLineLength(this.loc()) + 1, y = this.loc(), diff = 0, prev = -1, curr = 0
   var parts = this.tokens.getCollection('lines').parts
-  for (var i = 0; i < parts.length; i++) {
+  for (var i = 0, cy = 0; i < parts.length; i++) {
     var part = parts[i]
     for (var j = 0; j < part.length; j++) {
+      cy++
       curr = part[j]
       diff = curr - prev
       prev = curr
-      if (diff > max) max = diff
+      if (diff > max) {
+        max = diff
+        y = cy
+      }
     }
+  }
+  if (withLineNumber) return {
+    length: max - 1,
+    lineNumber: Math.max(0, y - 1)
   }
   return max - 1 // minus the newline char
 }

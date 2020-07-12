@@ -31,6 +31,7 @@ const WORDS = Regexp.create(['words'], 'g')
 class Editor {
   constructor () {
     this.pos = { x: 0, y: 0 }
+    this.scroll = { x: 0, y: 0 }
     this.buffer = new Buffer
     this.buffer.on('update', () => {
       this.history.save()
@@ -44,8 +45,10 @@ class Editor {
   }
 
   async setup (data) {
-    const { pixelRatio } = data
+    const { pos, pixelRatio } = data
     const { width, height } = data.outerCanvas
+
+    this.pos = pos
 
     this.canvas = { width, height, pixelRatio, padding: 3 }
     this.canvas.outer = data.outerCanvas
@@ -110,7 +113,10 @@ class Editor {
     })
 
     // this.setText('abc\ndef\nghi\nklm')
-    this.setText(this.setup.toString())
+    // this.setText('\t\tabqwe\tqrwrrec\tc\n\tdqweqweef\n\t\t\t\t     ghi\nklm')
+    this.setText('\t\tabc\tdef')
+      // + this.setup.toString())
+    // this.setText(this.setup.toString())
     // this.setText('hello\n')
     this.moveCaret({ x: 0, y: 0 })
     // this.markSetArea({ begin: { x: 4, y: 1 }, end: { x: 9, y: 10 }})
@@ -265,17 +271,18 @@ class Editor {
 
   getCoordsTabs ({ x, y }) {
     const line = this.buffer.getLineText(y)
-    let remainder = 0
-    let tabs = 0
-    let tab
-    let prev = 0
-    while (~(tab = line.indexOf('\t', tab + 1))) {
-      if (tabs * this.tabSize + remainder >= x) break
-      remainder += (tab - prev) % this.tabSize
-      tabs++
-      prev = tab + 1
+
+    const { tabSize } = this
+
+    let displayIndex = 0
+    let i = 0
+    for (i = 0; i < line.length; i++) {
+      if (displayIndex >= x) break
+      if (line[i] === '\t') displayIndex += tabSize
+      else displayIndex += 1
     }
-    return { tabs, remainder }
+
+    return i
   }
 
   moveByWords (dx) {
@@ -423,24 +430,24 @@ class Editor {
   }
 
   keepCaretInView () {
-    if (this.animationRunning) return
+    const target = this.animationRunning ? this.animationScrollTarget : this.scroll
 
-    const p = this.caret.pos
+    const p = this.caret.px
 
-    const left = -(this.pos.x / this.canvas.pixelRatio)
+    const left = -(target.x / this.canvas.pixelRatio)
     const width =
       this.canvas.width / this.canvas.pixelRatio
     - (this.gutter.width / this.canvas.pixelRatio)
     const right = left + width
     const top = -(
-      this.pos.y / this.canvas.pixelRatio
+      target.y / this.canvas.pixelRatio
     + this.canvas.padding
     )
     const height = this.canvas.height / this.canvas.pixelRatio
     const bottom = top + height
 
-    const x = p.x * this.char.width
-    const y = p.y * this.line.height - this.line.padding
+    const x = p.x //* this.char.width
+    const y = p.y //* this.line.height - this.line.padding
 
     const dx =
       x < left ? left - x
@@ -452,18 +459,26 @@ class Editor {
     : y + this.line.height + this.line.padding > bottom ? bottom - (y + this.line.height + this.line.padding)
     : 0
 
-    if (dx) this.pos.x += dx * this.canvas.pixelRatio
-    if (dy) this.pos.y += dy * this.canvas.pixelRatio
+    if (dx) target.x += dx * this.canvas.pixelRatio
+    if (dy) target.y += dy * this.canvas.pixelRatio
 
     if (dx || dy) this.draw()
   }
 
   setCaret (point) {
     this.caret.pos.set(point)
-    const { tabs, remainder } = this.getPointTabs(this.caret.pos)
+    const { tabs } = this.getPointTabs(this.caret.pos)
     this.caret.px.set({
-      x: this.char.width * (this.caret.pos.x + tabs * this.tabSize - remainder) + this.gutter.padding - 1,
-      y: this.line.height * this.caret.pos.y + this.canvas.padding - this.line.padding - .5
+      x: this.char.width * (
+        (this.caret.pos.x - tabs)
+      + (tabs * this.tabSize))
+      + this.gutter.padding
+      - 1,
+      y: this.line.height
+      * this.caret.pos.y
+      + this.canvas.padding
+      - this.line.padding
+      - .5
     })
   }
 
@@ -476,7 +491,9 @@ class Editor {
     let changed = false
 
     const loc = this.buffer.loc()
-    const longestLineLength = this.buffer.getLongestLineLength()
+    const longestLine = this.buffer.getLongestLine(true)
+    const { tabs, remainder } = this.getPointTabs({ x: longestLine.length, y: longestLine.lineNumber })
+    const longestLineLength = longestLine.length + tabs + remainder
 
     if (loc !== this.sizes.loc) {
       changed = true
@@ -614,16 +631,29 @@ class Editor {
       mark.fillRect(xx + ax + eax, yy + ay, bx - eax + ebx, by)
     }
 
+
     if (begin.y === end.y) {
+      const { tabs: beginTabs } = this.getPointTabs({ x: begin.x, y: begin.y + Y })
+      const { tabs: endTabs } = this.getPointTabs({ x: end.x, y: end.y + Y })
+      begin.x += beginTabs * this.tabSize - beginTabs
+      end.x += endTabs * this.tabSize - endTabs
       drawMarkArea({ begin, end })
     } else {
       for (let y = begin.y; y <= end.y; y++) {
+        let lineLength = this.buffer.getLineLength(y + Y)
+        const { tabs, remainder } = this.getPointTabs({ x: lineLength, y: y + Y })
+        lineLength += tabs * this.tabSize - tabs
+
         if (y === begin.y) {
-          drawMarkArea({ begin, end: { x: this.buffer.getLineLength(y + Y) } }, 0, this.char.width / 2)
+          const { tabs, remainder } = this.getPointTabs({ x: begin.x, y: begin.y + Y })
+          begin.x += tabs * this.tabSize - tabs
+          drawMarkArea({ begin, end: { x: lineLength } }, 0, this.char.width / 2)
         } else if (y === end.y) {
+          const { tabs, remainder } = this.getPointTabs({ x: end.x, y: end.y + Y })
+          end.x += tabs * this.tabSize - tabs
           drawMarkArea({ begin: { x: 0, y }, end }, -this.gutter.padding)
         } else {
-          drawMarkArea({ begin: { x: 0, y }, end: { x: this.buffer.getLineLength(y + Y), y }}, -this.gutter.padding, this.char.width / 2)
+          drawMarkArea({ begin: { x: 0, y }, end: { x: lineLength, y }}, -this.gutter.padding, this.char.width / 2)
         }
       }
     }
@@ -646,8 +676,8 @@ class Editor {
     // draw text layer
     this.ctx.outer.drawImage(
       this.canvas.text,
-      -this.pos.x,
-      -this.pos.y,
+      -this.scroll.x,
+      -this.scroll.y,
       this.canvas.width,
       this.canvas.height,
       this.canvas.gutter.width,
@@ -663,8 +693,8 @@ class Editor {
 
     this.ctx.outer.drawImage(
       this.canvas.mark,
-      this.pos.x + this.canvas.gutter.width,
-      this.pos.y + begin.y * this.line.height * this.canvas.pixelRatio,
+      this.scroll.x + this.canvas.gutter.width,
+      this.scroll.y + begin.y * this.line.height * this.canvas.pixelRatio,
       this.canvas.mark.width,
       this.canvas.mark.height
     )
@@ -674,11 +704,11 @@ class Editor {
     // draw caret
     this.ctx.outer.fillStyle = colors.caret
     this.ctx.outer.fillRect(
-      this.pos.x - 1
+      this.scroll.x - 1
     + (this.caret.px.x
     + this.gutter.width
     + this.canvas.padding) * this.canvas.pixelRatio,
-      this.pos.y + this.caret.px.y * this.canvas.pixelRatio,
+      this.scroll.y + this.caret.px.y * this.canvas.pixelRatio,
       this.caret.width * this.canvas.pixelRatio,
       this.caret.height * this.canvas.pixelRatio
     )
@@ -715,11 +745,11 @@ class Editor {
     scrollbar.vert = scale.height * view.height
 
     const x =
-    - (this.pos.x / (this.canvas.overscrollWidth || 1))
+    - (this.scroll.x / (this.canvas.overscrollWidth || 1))
     * ((view.width - scrollbar.horiz) || 1) || 0
 
     const y =
-    - (this.pos.y / ((this.canvas.text.height - this.canvas.height) || 1))
+    - (this.scroll.y / ((this.canvas.text.height - this.canvas.height) || 1))
     * ((view.height - scrollbar.vert) || 1)
 
     if (x + view.width - scrollbar.horiz > 12) {
@@ -742,7 +772,7 @@ class Editor {
     this.ctx.outer.drawImage(
       this.canvas.gutter,
       0,
-      -this.pos.y,
+      -this.scroll.y,
       this.canvas.gutter.width,
       this.canvas.gutter.height,
       0,
@@ -767,15 +797,15 @@ class Editor {
   }
 
   scrollBy (deltaX, deltaY, sync = false) {
-    this.pos.x += deltaX
-    this.pos.y += deltaY
-    this.pos.x = Math.max(
+    this.scroll.x += deltaX
+    this.scroll.y += deltaY
+    this.scroll.x = Math.max(
       -this.canvas.overscrollWidth,
-      Math.min(0, this.pos.x)
+      Math.min(0, this.scroll.x)
     )
-    this.pos.y = Math.max(
+    this.scroll.y = Math.max(
       -this.canvas.overscrollHeight,
-      Math.min(0, this.pos.y)
+      Math.min(0, this.scroll.y)
     )
     if (sync) this.syncDraw()
     else this.draw()
@@ -789,7 +819,7 @@ class Editor {
       this.animationFrame = requestAnimationFrame(this.animationScrollBegin)
     }
 
-    var s = this.animationScrollTarget ?? this.pos
+    var s = this.animationScrollTarget ?? this.scroll
     this.animationScrollTarget = new Point({
       x: Math.max(-this.canvas.overscrollWidth, Math.min(0, s.x - dx)),
       y: Math.max(-this.canvas.overscrollHeight, Math.min(0, s.y - dy))
@@ -799,7 +829,7 @@ class Editor {
   animationScrollBegin () {
     this.animationFrame = requestAnimationFrame(this.animationScrollFrame)
 
-    const s = this.pos
+    const s = this.scroll
     const t = this.animationScrollTarget
     if (!t) return cancelAnimationFrame(this.animationScrollFrame)
 
@@ -814,7 +844,7 @@ class Editor {
 
   animationScrollFrame () {
     let speed = 165
-    const s = this.pos
+    const s = this.scroll
     const t = this.animationScrollTarget
     if (!t) return cancelAnimationFrame(this.animationScrollFrame)
 
@@ -830,8 +860,8 @@ class Editor {
 
     if ((adx < .5 && ady < .5) || !this.animationRunning) {
       this.animationRunning = false
-      this.pos.x = t.x
-      this.pos.y = t.y
+      this.scroll.x = t.x
+      this.scroll.y = t.y
       this.animationScrollTarget = null
       this.draw()
       return
@@ -872,17 +902,37 @@ class Editor {
   }
 
   onmousedown ({ clientX, clientY }) {
-    const lineNumber = Math.max(
-      1,
+    const y = Math.max(
+      0,
       Math.min(
         this.sizes.loc,
         Math.floor(
-          (clientY - (this.pos.y / 2 + this.canvas.padding))
+          (clientY - (this.scroll.y / this.canvas.pixelRatio + this.canvas.padding))
         / this.line.height
-        + 1
         )
       )
     )
+
+    let x = Math.max(
+      0,
+      Math.round(
+        (clientX - (this.scroll.x + this.canvas.gutter.width + this.gutter.padding) / this.canvas.pixelRatio)
+      / this.char.width
+      )
+    )
+
+    const actualIndex = this.getCoordsTabs({ x, y })
+
+    x = Math.max(
+      0,
+      Math.min(
+        actualIndex,
+        this.buffer.getLineLength(y)
+      )
+    )
+
+    this.setCaret({ x, y })
+    this.draw()
   }
 
   onmousemove ({ clientX, clientY }) {
@@ -1011,8 +1061,8 @@ class Editor {
       case 'ArrowRight'     : this.moveByChars(+1); break
       case 'ArrowUp'        : this.moveByLines(-1); break
       case 'ArrowDown'      : this.moveByLines(+1); break
-      case 'PageUp'         : this.keepCaretInView(); this.animateScrollBy(0, -this.page.height, 'ease'); this.moveByLines(-this.page.lines); break
-      case 'PageDown'       : this.keepCaretInView(); this.animateScrollBy(0, +this.page.height, 'ease'); this.moveByLines(+this.page.lines); break
+      case 'PageUp'         : this.animateScrollBy(0, -this.page.height, 'ease'); this.moveByLines(-this.page.lines); break
+      case 'PageDown'       : this.animateScrollBy(0, +this.page.height, 'ease'); this.moveByLines(+this.page.lines); break
       case 'Home'           : this.moveBeginOfLine(true); break
       case 'End'            : this.moveEndOfLine(); break
     }
