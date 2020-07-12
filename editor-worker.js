@@ -4,9 +4,10 @@ import Point from './buffer/point.js'
 import Buffer from './buffer/index.js'
 import History from './history.js'
 import Syntax from './syntax.js'
+import themes from './themes.js'
 
 const colors = {
-  back: '#000',
+  background: '#000',
   text: '#fff',
   mark: '#449',
   caret: '#77f',
@@ -15,26 +16,10 @@ const colors = {
   lineNumbers: '#888'
 }
 
-const themes = {
-  monokai: {
-    ...colors,
-    back: '#272822',
-    text: '#F8F8F2',
-    symbol: '#F8F8F2',
-    operator: '#DF2266',
-    params: '#FD971F',
-    builtin: '#61CCE0',
-    declare: '#61CCE0',
-    function: '#A0D92E',
-    keyword: '#DF2266',
-    special: '#AB7FFB',
-    comment: '#75715E',
-    string: '#E6DB74',
-    template_string: '#E6DB74',
-  }
+const theme = {
+  ...colors,
+  ...themes['monokai'].highlights
 }
-
-const theme = themes.monokai
 
 const lines = text => text.split(/\n/g)
 const NONSPACE = /[^\s]/g
@@ -57,9 +42,11 @@ class Editor {
     this.buffer = new Buffer
     this.buffer.on('update', () => {
       this.history.save()
+      this.updateText()
     })
     this.buffer.on('before update', () => {
       this.history.save()
+      this.updateText()
     })
     this.syntax = new Syntax()
     this.syncDraw = this.syncDraw.bind(this)
@@ -135,14 +122,8 @@ class Editor {
       })
     })
 
-    // this.setText('abc\ndef\nghi\nklm')
-    // this.setText('\t\tabqwe\tqrwrrec\tc\n\tdqweqweef\n\t\t\t\t     ghi\nklm')
-    // this.setText('\t\tabc\tdef')
-      // + this.setup.toString())
     this.setText(this.setup.toString())
-    // this.setText('hello\n')
     this.moveCaret({ x: 0, y: 0 })
-    // this.markSetArea({ begin: { x: 4, y: 1 }, end: { x: 9, y: 10 }})
   }
 
   erase (moveByChars = 0) {
@@ -155,11 +136,14 @@ class Editor {
     } else {
       this.history.save()
       if (moveByChars) this.moveByChars(moveByChars)
+      // const left = line[this.caret.pos.x]
+      // let line = this.buffer.getLineText(this.caret.pos.y)
+      // const hasLeftSymbol = ['{','[','(','\'','"','`'].includes(left)
       this.buffer.removeCharAtPoint(this.caret.pos)
-      const line = this.buffer.getLineText(this.caret.pos.y)
-      const right = line[this.caret.pos.x]
-      const hasRightSymbol = ['\'','"','`','}',']',')'].includes(right)
-      if (hasRightSymbol) this.buffer.removeCharAtPoint(this.caret.pos)
+      // line = this.buffer.getLineText(this.caret.pos.y)
+      // const right = line[this.caret.pos.x]
+      // const hasRightSymbol = ['\'','"','`','}',']',')'].includes(right)
+      // if (hasLeftSymbol && hasRightSymbol) this.buffer.removeCharAtPoint(this.caret.pos)
     }
 
     this.updateSizes()
@@ -596,9 +580,9 @@ class Editor {
     const { gutter } = this.ctx
 
     this.applyFont(gutter)
-    gutter.fillStyle = colors.gutter
+    gutter.fillStyle = theme.gutter
     gutter.fillRect(0, 0, this.canvas.gutter.width, this.canvas.gutter.height)
-    gutter.fillStyle = colors.lineNumbers
+    gutter.fillStyle = theme.lineNumbers
 
     for (let i = 0, y = 0; i <= this.sizes.loc; i++) {
       y = this.canvas.padding + i * this.line.height
@@ -615,7 +599,7 @@ class Editor {
 
     this.applyFont(text)
     text.clearRect(0, 0, this.canvas.text.width, this.canvas.text.height)
-    text.fillStyle = colors.text
+    text.fillStyle = theme.text
 
     const pieces = this.syntax.highlight(this.buffer.toString())
 
@@ -624,7 +608,7 @@ class Editor {
       y = this.canvas.padding + i * this.line.height
 
       if (type === 'newline') {
-        lastNewLine = index
+        lastNewLine = index + 1
         i++
         continue
       }
@@ -659,7 +643,7 @@ class Editor {
 
     mark.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
 
-    mark.fillStyle = colors.mark
+    mark.fillStyle = theme.mark
     const r = this.canvas.pixelRatio
     const xx = this.gutter.padding
     const yy = this.canvas.padding / r
@@ -704,7 +688,7 @@ class Editor {
 
   clear () {
     // clear
-    this.ctx.outer.fillStyle = colors.back
+    this.ctx.outer.fillStyle = theme.background
     this.ctx.outer.fillRect(
       0,
       0,
@@ -743,7 +727,7 @@ class Editor {
 
   drawCaret () {
     // draw caret
-    this.ctx.outer.fillStyle = colors.caret
+    this.ctx.outer.fillStyle = theme.caret
     this.ctx.outer.fillRect(
       this.scroll.x - 1
     + (this.caret.px.x
@@ -760,7 +744,7 @@ class Editor {
     const scrollbar = { width: 10 }
     scrollbar.margin = scrollbar.width / 2 / 2
 
-    this.ctx.outer.strokeStyle = colors.scrollbar
+    this.ctx.outer.strokeStyle = theme.scrollbar
     this.ctx.outer.lineWidth = scrollbar.width
     // this.ctx.outer.lineCap = 'round'
 
@@ -972,6 +956,7 @@ class Editor {
       )
     )
 
+    this.caret.align = x
     this.setCaret({ x, y })
   }
 

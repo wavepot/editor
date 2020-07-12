@@ -4,6 +4,7 @@ const isWithin = (e, { left, top, right, bottom }) => {
     return true
   }
 }
+
 const createEventsHandler = parent => {
   const targets = {}
 
@@ -167,6 +168,7 @@ const createEditor = (width, height) => {
   canvas.style.height = `${height}px`
 
   const worker = new Worker('./editor-worker.js', { type: 'module' })
+  worker.onerror = e => console.error(e)
 
   const methods = {
     onhistory ({ length, needle }) {
@@ -317,11 +319,11 @@ const create = (width, height) => {
 
 // create(window.innerWidth - 260, 200)
 // create(window.innerWidth, 200)
-create(200, 200)
-create(300, window.innerHeight)
+// create(200, 200)
 // create(300, window.innerHeight)
 // create(300, window.innerHeight)
-// create(window.innerWidth, window.innerHeight)
+// create(300, window.innerHeight)
+create(window.innerWidth, window.innerHeight)
 // for (let i = 0; i < 40; i++) create(70, 70)
 
 

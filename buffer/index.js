@@ -8,7 +8,7 @@ import PrefixTree from './prefixtree.js'
 import Segments from './segments.js'
 import Indexer from './indexer.js'
 import Tokens from './tokens.js'
-import Syntax from './syntax.js'
+// import Syntax from './syntax.js'
 
 var EOL = /\r\n|\r|\n/g;
 var NEWLINE = /\n/g;
@@ -21,7 +21,7 @@ var SEGMENT = {
 
 export default function Buffer() {
   this.log = [];
-  this.syntax = new Syntax;
+  // this.syntax = new Syntax;
   this.indexer = new Indexer(this);
   this.segments = new Segments(this);
   this.setText('');
@@ -52,7 +52,7 @@ Buffer.prototype.setText = function(text) {
 
   this.raw = text //this.syntax.highlight(text);
 
-  this.syntax.tab = ~this.raw.indexOf('\t') ? '\t' : ' ';
+  // this.syntax.tab = ~this.raw.indexOf('\t') ? '\t' : ' ';
 
   this.text = new SkipString;
   this.text.set(this.raw);

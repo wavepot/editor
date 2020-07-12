@@ -2,31 +2,23 @@ import Regexp from './buffer/regexp.js'
 
 var R = Regexp.create;
 
+var NewLine = R(['newline'], 'g')
+
 //NOTE: order matters
 var syntax = Regexp.join([
   'newline',
-  'operator',
-  'params',
-  'declare',
-  'function',
-  'keyword',
-  'builtin',
-  'symbol',
-  'string',
-  ['special', R(['special', 'number'], '')]
-], 'g')
-// console.log(syntax)
-// var syntax = map({
-//   't': R(['operator'], 'g', entities),
-//   'm': R(['params'],   'g'),
-//   'd': R(['declare'],  'g'),
-//   'f': R(['function'], 'g'),
-//   'k': R(['keyword'],  'g'),
-//   'n': R(['builtin'],  'g'),
-//   'l': R(['symbol'],   'g'),
-//   's': R(['template string'], 'g'),
-//   'e': R(['special','number'], 'g'),
-// }, compile);
+  // 'comment',
+  // 'operator',
+  // 'params',
+  'attribute',
+  // 'keyword',
+  ['variable', R(['declare', 'variable'], '')],
+  ['keyword', R(['operator', 'keyword'], '')],
+  // 'string',
+  // 'symbol',
+  'definition',
+  ['number', R(['special', 'number'], '')],
+], 'gm')
 
 var Indent = {
   regexp: R(['indent'], 'gm'),
@@ -35,49 +27,57 @@ var Indent = {
 
 var AnyChar = /\S/g;
 
-var Blocks = R(['comment','string','regexp'], 'gm');
+var Blocks = Regexp.join([
+  'comment',
+  'string',
+  // ['string', R(['template string'])],
+  'regexp',
+], 'gm');
 
 var LongLines = /(^.{1000,})/gm;
 
 var Tag = {
-  '//': 'c',
-  '/*': 'c',
-  '`': 's',
-  '"': 's',
-  "'": 's',
-  '/': 'r',
+  '//': 'comment',
+  '/*': 'comment',
+  '`': 'string',
+  '"': 'string',
+  "'": 'string',
+  '/': 'regexp',
 };
 
 export default function Syntax(o) {
   o = o || {};
   this.tab = o.tab || '\t';
   this.blocks = [];
+  this.blockIndex = 0
 }
 
 Syntax.prototype.entities = entities;
 
 Syntax.prototype.highlight = function(code, offset) {
+  code += '\n*/`\n'
+
   // code = this.createIndents(code);
-  // code = this.createBlocks(code);
+  code = this.createBlocks(code);
   // code = entities(code);
 
   const pieces = []
 
-  let match, piece, lastPos = 0
+  let match, piece, lastPos = 0, text, add = 0
   while (match = syntax.exec(code)) {
-    if (match.index > lastPos) pieces.push(['text', code.slice(lastPos, match.index), lastPos])
-    // pieces.push(
+    if (match.index > lastPos) {
+      text = code.slice(lastPos, match.index)
+      let blocks = this.restoreBlocks(text)
+      blocks.forEach(block => {
+        pieces.push([block[0], block[1], block[2] + lastPos])
+      })
+    }
     piece = Object.entries(match.groups).filter(([key, value]) => value !== undefined)[0]
     piece.push(match.index)
     pieces.push(piece)
     lastPos = match.index + piece[1].length
-    // lastMatch = match
-    // lastIndex = match.index
-    // console.log(match)
-    // code = code.replace(syntax[key].regexp, syntax[key].replacer);
   }
 
-  // console.log(pieces)
   // code = this.restoreBlocks(code);
   // code = code.replace(Indent.regexp, Indent.replacer);
 
@@ -111,30 +111,58 @@ Syntax.prototype.createIndents = function(code) {
 Syntax.prototype.restoreBlocks = function(code) {
   var block;
   var blocks = this.blocks;
-  var n = 0;
-  return code
-    .replace(/\uffec/g, function() {
-      block = blocks[n++];
-      return entities(block.slice(0, 1000) + '...line too long to display');
-    })
-    .replace(/\uffeb/g, function() {
-      block = blocks[n++];
-      var tag = identify(block);
-      return '<'+tag+'>'+entities(block)+'</'+tag+'>';
-    });
+  var regexp = /\uffeb/g
+
+  let match, lastPos = 0, text, add = 0, out = []
+
+  let newLineMatch, lastNewLinePos = 0
+
+  while (match = regexp.exec(code)) {
+    if (match.index > lastPos) {
+      text = code.slice(lastPos, match.index)
+      if (text.length) {
+        out.push(['text', text, lastPos])
+      }
+      add += text.length
+    }
+    block = blocks[this.blockIndex++]
+    var tag = identify(block)
+
+    lastNewLinePos = 0
+    while (newLineMatch = NewLine.exec(block)) {
+      text = block.slice(lastNewLinePos, newLineMatch.index)
+      out.push([tag, text, lastNewLinePos + add])
+      out.push(['newline', '\n', newLineMatch.index + add])
+      lastNewLinePos = newLineMatch.index + 1
+    }
+
+    if (!lastNewLinePos) {
+      out.push([tag, block, match.index])
+    } else {
+      out.push([tag, block.slice(lastNewLinePos), lastNewLinePos + add])
+    }
+    add += block.length
+    lastPos = match.index + block.length
+  }
+
+  text = code.slice(lastPos)
+  if (text.length) out.push(['text', text, lastPos])
+
+  return out
 };
 
 Syntax.prototype.createBlocks = function(code) {
   this.blocks = [];
+  this.blockIndex = 0;
 
   code = code
-    .replace(LongLines, (block) => {
-      this.blocks.push(block);
-      return '\uffec';
-    })
+    // .replace(LongLines, (block) => {
+    //   this.blocks.push(block);
+    //   return '\uffec';
+    // })
     .replace(Blocks, (block) => {
       this.blocks.push(block);
-      return '\uffeb';
+      return '\uffeb' + ' '.repeat(block.length - 1);
     });
 
   return code;
