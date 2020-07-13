@@ -78,7 +78,7 @@ export default [{
   highlights: {
     background: "#272822",
     text: "#f8f8f2",
-    variable: "#7efafa",
+    variable: "#70f2f2",
     attribute: "#a6e22e",
     definition: "#fd971f",
     keyword: "#f92672",
@@ -86,6 +86,24 @@ export default [{
     property: "#a6e22e",
     number: "#ae81ff",
     string: "#e6db74",
+    comment: "#75715e",
+    meta: "#555",
+    tag: "#bc6283"
+  }
+}, {
+  id: "wavepot",
+  name: "Wavepot",
+  highlights: {
+    background: "#1f1f1f",
+    text: "#fafaf2",
+    variable: "#5099bc",
+    attribute: "#fafa00",
+    definition: "#ff272f",
+    keyword: "#ff272f",
+    operator: "#fff",
+    property: "#a6e22e",
+    number: "#ae81ff",
+    string: "#00ff00",
     comment: "#75715e",
     meta: "#555",
     tag: "#bc6283"

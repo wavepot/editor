@@ -70,9 +70,9 @@ export default class Area {
     return end.y - begin.y
   }
 
-  setLeft (x) {
-    this.begin.x = x;
-    // this.end.x = x;
+  setLeft (bx, ex) {
+    this.begin.x = bx;
+    if (ex != null) this.end.x = ex;
     return this;
   }
 

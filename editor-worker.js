@@ -122,8 +122,13 @@ class Editor {
       })
     })
 
-    this.setText(this.setup.toString())
+    // this.setText('')
+    // this.setText('/*""*/\n//hello\nfoo(\'hello\').indexOf(\'\\t\') // foo\nhi"hello"\n// yo')
+    this.setText(this.delete.toString()) // + this.setup.toString())
     this.moveCaret({ x: 0, y: 0 })
+    this.draw()
+    // setTimeout(() => this.scrollBy(0, -6400), 10)
+    // setTimeout(() => this.scrollBy(0, -27400), 10)
   }
 
   erase (moveByChars = 0) {
@@ -132,7 +137,7 @@ class Editor {
       const area = this.mark.get()
       this.moveCaret(area.begin)
       this.buffer.removeArea(area)
-      this.markClear(true)
+      // this.markClear(true)
     } else {
       this.history.save()
       if (moveByChars) this.moveByChars(moveByChars)
@@ -148,6 +153,7 @@ class Editor {
 
     this.updateSizes()
     this.updateText()
+    this.keepCaretInView()
     this.draw()
   }
 
@@ -202,7 +208,7 @@ class Editor {
       left = line.slice(0, this.caret.pos.x).trim().slice(-1)
       const isEndOfLine = this.caret.pos.x >= line.trim().length - 1
       hasLeftSymbol = ['{','[','('].includes(left)
-      indent = line.match(/\S/)?.index ?? line.length - 1
+      indent = line.match(/\S/)?.index ?? (line.length || 1) - 1
       const isBeforeIndent = this.caret.pos.x < indent
 
       if (hasLeftSymbol) indent += 2
@@ -448,8 +454,8 @@ class Editor {
 
   moveCaret ({ x, y }) {
     this.setCaret({ x, y })
-    this.keepCaretInView()
-    this.draw()
+    // this.keepCaretInView()
+    // this.draw()
   }
 
   keepCaretInView () {
@@ -588,7 +594,7 @@ class Editor {
 
   applyFont (ctx) {
     ctx.textBaseline = 'top'
-    ctx.font = 'normal 9pt Liberation Mono'
+    ctx.font = 'normal 8.5pt Liberation Mono'
     // ctx.font = 'normal 8.78pt Liberation Mono'
   }
 
@@ -1018,7 +1024,76 @@ class Editor {
     else if (e.key !== 'Delete' && !e.cmdKey) this.markClear()
 
     switch (this.pressed) {
-      case 'Cmd D':
+      case 'Cmd /': {
+
+        let add;
+        let area;
+        let text;
+
+        let prevArea = this.mark.copy()
+
+        let clear = false;
+        let caret = this.caret.pos.copy();
+        let align = this.caret.align
+
+        let matchIndent = false
+
+        if (!this.markActive) {
+          clear = true;
+          this.markClear();
+          this.moveBeginOfLine();
+          this.markBegin();
+          this.moveEndOfLine();
+          this.markSet();
+          area = this.mark.get();
+          text = this.buffer.getAreaText(area);
+          matchIndent = text.match(/\S/)?.index < caret.x
+        } else {
+          area = this.mark.get();
+          area.end.y += area.end.x > 0 ? 1 : 0
+          area.begin.x = 0
+          area.end.x = 0
+          // area.addBottom(area.end.x > 0 ? 1 : 0).setLeft(0, 0);
+          text = this.buffer.getAreaText(area);
+          matchIndent = true
+        }
+
+        //TODO: should check if last line has // also
+        if (text.trimLeft().substr(0,2) === '//') {
+          add = -3;
+          text = text.replace(/^(.*?)\/\/ (.+)/gm, '$1$2');
+        } else {
+          add = +3;
+          text = text.replace(/^([\s]*)(.+)/gm, '$1// $2');
+        }
+
+        this.mark.set(area)
+        this.insert(text);
+        this.mark.set(prevArea)
+        this.mark.begin.x += this.mark.begin.x > 0 ? add : 0
+        this.mark.end.x += this.mark.end.x > 0 ? add : 0
+        // this.mark.set(prevArea.addRight(add))
+
+        // this.mark.set(area.addRight(add));
+        this.markActive = !clear;
+
+        this.caret.align = align
+
+        if (matchIndent) {
+          caret.x += add
+          this.caret.align += add
+        }
+        this.setCaret(caret);
+        this.keepCaretInView()
+
+        if (clear) {
+          // this.markClear();
+        }
+        this.updateMark()
+        this.draw()
+      }
+      return
+      case 'Cmd D': {
         this.align()
         const area = this.mark.get()
         if (area.isEmpty()) {
@@ -1057,7 +1132,9 @@ class Editor {
           this.mark.shiftByLines(area.height)
           this.updateMark()
         }
-        return
+      }
+      return
+
       case 'Delete': case 'Cmd x':
         if (!this.mark.isEmpty()) {
           this.delete()
@@ -1126,6 +1203,8 @@ class Editor {
     }
 
     if (e.shiftKey) this.markSet()
+    this.keepCaretInView()
+    this.draw()
   }
 
   onkeyup (e) {

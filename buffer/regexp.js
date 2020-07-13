@@ -13,11 +13,11 @@ Regexp.create = function(names, flags, fn) {
   );
 };
 
-Regexp.join = function(regexps, flags) {
+Regexp.join = function(regexps, flags, prepend = '') {
   return new RegExp(
     regexps
     .map(n => 'string' === typeof n ? [n, Regexp.types[n]] : n)
-    .map(r => '(?<' + r[0].replace(/\s/g, '_') + '>' + r[1].toString().slice(1,-1) + ')')
+    .map(r => (r[2] ?? '') + '(?<' + r[0].replace(/\s/g, '_') + '>' + r[1].toString().slice(1,-1) + ')')
     .join('|'),
     flags
   )
@@ -43,12 +43,17 @@ Regexp.types = {
   'params': /function[ \(]{1}[^]*?\{/,
   'number': /-?\b(0x[\dA-Fa-f]+|\d*\.?\d+([Ee][+-]?\d+)?|NaN|-?Infinity)\b/,
   'symbol': /[{}[\](),:]/,
-  'definition': /\bthis\b|(?!\()([^()]+)(?=\).+\{)/,
+  'call': /\b(\w+)(?=\()/,
+  'definition': /\bthis\b/,
+
+  // 'arguments': /(?:(?!if|else|do|for|case|try|catch|while|with|switch))(?:[^\(\n]*)(?:\().([^{()}]+)(?=[\}\)]+\s?\{)/,
+  // / (?!\d|[. ]*?(?=if|else|do|for|case|try|catch|while|with|switch))(?=[a-zA-Z0-9_ $])+(?!\()([^{()}]+)(?=[\}\)]+\s?\{)/,
+  // 'arguments': /(?!\()([^()]+)(?=\).+\{)/,
   'regexp': /(?![^\/])(\/(?![\/|\*]).*?[^\\\^]\/)([;\n\.\)\]\} gim])/,
 
   'xml': /<[^>]*>/,
   'url': /((\w+:\/\/)[-a-zA-Z0-9:@;?&=\/%\+\.\*!'\(\),\$_\{\}\^~\[\]`#|]+)/,
-  'indent': /^ +|^\t+/,
+  'indent': /^ +|^\t+/,//(?!.*(if|else|do|for|case|try|catch|while|with|switch))
   'line': /^.+$|^\n/,
   'newline': /\r\n|\r|\n/,
 };

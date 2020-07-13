@@ -12,7 +12,7 @@ var syntax = Regexp.join([
   // 'params',
   'attribute',
   // 'keyword',
-  ['variable', R(['declare', 'variable'], '')],
+  ['variable', R(['declare', 'variable','call'], '')],
   ['keyword', R(['operator', 'keyword'], '')],
   // 'string',
   // 'symbol',
@@ -30,6 +30,7 @@ var AnyChar = /\S/g;
 var Blocks = Regexp.join([
   'comment',
   'string',
+  // ['definition', R(['arguments']), '^'],
   // ['string', R(['template string'])],
   'regexp',
 ], 'gm');
@@ -55,10 +56,11 @@ export default function Syntax(o) {
 Syntax.prototype.entities = entities;
 
 Syntax.prototype.highlight = function(code, offset) {
-  code += '\n*/`\n'
+  code += '\n*/`\n\n'
 
   // code = this.createIndents(code);
   code = this.createBlocks(code);
+  // console.log(code)
   // code = entities(code);
 
   const pieces = []
@@ -109,14 +111,13 @@ Syntax.prototype.createIndents = function(code) {
 };
 
 Syntax.prototype.restoreBlocks = function(code) {
-  var block;
-  var blocks = this.blocks;
-  var regexp = /\uffeb/g
+  var block
+  var blocks = this.blocks
+  var regexp = /\uffee/g
 
   let match, lastPos = 0, text, add = 0, out = []
 
   let newLineMatch, lastNewLinePos = 0
-
   while (match = regexp.exec(code)) {
     if (match.index > lastPos) {
       text = code.slice(lastPos, match.index)
@@ -126,23 +127,23 @@ Syntax.prototype.restoreBlocks = function(code) {
       add += text.length
     }
     block = blocks[this.blockIndex++]
-    var tag = identify(block)
+    var tag = block[0]
 
     lastNewLinePos = 0
-    while (newLineMatch = NewLine.exec(block)) {
-      text = block.slice(lastNewLinePos, newLineMatch.index)
+    while (newLineMatch = NewLine.exec(block[1])) {
+      text = block[1].slice(lastNewLinePos, newLineMatch.index)
       out.push([tag, text, lastNewLinePos + add])
       out.push(['newline', '\n', newLineMatch.index + add])
       lastNewLinePos = newLineMatch.index + 1
     }
 
     if (!lastNewLinePos) {
-      out.push([tag, block, match.index])
+      out.push([tag, block[1], match.index])
     } else {
-      out.push([tag, block.slice(lastNewLinePos), lastNewLinePos + add])
+      out.push([tag, block[1].slice(lastNewLinePos), lastNewLinePos + add])
     }
-    add += block.length
-    lastPos = match.index + block.length
+    add += block[1].length
+    lastPos = match.index + block[1].length
   }
 
   text = code.slice(lastPos)
@@ -155,17 +156,36 @@ Syntax.prototype.createBlocks = function(code) {
   this.blocks = [];
   this.blockIndex = 0;
 
-  code = code
-    // .replace(LongLines, (block) => {
-    //   this.blocks.push(block);
-    //   return '\uffec';
-    // })
-    .replace(Blocks, (block) => {
-      this.blocks.push(block);
-      return '\uffeb' + ' '.repeat(block.length - 1);
-    });
+  let parts = []
+  let match, piece, lastPos = 0, text, add = 0
+  while (match = Blocks.exec(code)) {
+    if (match.index > lastPos) {
+      text = code.slice(lastPos, match.index)
+      parts.push(text)
+    }
+    piece = Object.entries(match.groups).filter(([key, value]) => value !== undefined)[0]
+    piece.push(match.index)
+    this.blocks.push(piece)
+    parts.push('\uffee' + ','.repeat(piece[1].length - 1))
+    lastPos = match.index + piece[1].length
+  }
 
-  return code;
+  if (lastPos < code.length) parts.push(code.slice(lastPos))
+
+  return parts.join('')
+
+  // code = code
+  //   // .replace(LongLines, (block) => {
+  //   //   this.blocks.push(block);
+  //   //   return '\uffec';
+  //   // })
+  //   .replace(Blocks, (block, a, b, c, d, e, f, g) => {
+  //     console.log(block, a, b, c, d, e, f, g)
+  //     this.blocks.push(block)
+  //     return '\uffee' + ','.repeat(block.length - 1);
+  //   });
+
+  // return code;
 };
 
 function createId() {
