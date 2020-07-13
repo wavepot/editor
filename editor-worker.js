@@ -18,7 +18,7 @@ const colors = {
 
 const theme = {
   ...colors,
-  ...themes['monokai'].highlights
+  ...themes['wavepot'].highlights
 }
 
 const lines = text => text.split(/\n/g)
@@ -124,7 +124,7 @@ class Editor {
 
     // this.setText('')
     // this.setText('/*""*/\n//hello\nfoo(\'hello\').indexOf(\'\\t\') // foo\nhi"hello"\n// yo')
-    this.setText(this.delete.toString()) // + this.setup.toString())
+    this.setText(this.constructor.toString()) // + this.setup.toString())
     this.moveCaret({ x: 0, y: 0 })
     this.draw()
     // setTimeout(() => this.scrollBy(0, -6400), 10)
@@ -137,7 +137,7 @@ class Editor {
       const area = this.mark.get()
       this.moveCaret(area.begin)
       this.buffer.removeArea(area)
-      // this.markClear(true)
+      this.markClear(true)
     } else {
       this.history.save()
       if (moveByChars) this.moveByChars(moveByChars)
@@ -240,7 +240,11 @@ class Editor {
     else if ('"' === text) this.buffer.insert(this.caret.pos, '"')
     else if ('`' === text) this.buffer.insert(this.caret.pos, '`')
 
+    this.updateSizes()
     this.updateText()
+    this.keepCaretInView()
+    this.draw()
+    // console.log('updated', this.buffer.toString())
   }
 
   markBegin (area) {
@@ -594,7 +598,7 @@ class Editor {
 
   applyFont (ctx) {
     ctx.textBaseline = 'top'
-    ctx.font = 'normal 8.5pt Liberation Mono'
+    ctx.font = 'normal 9.5pt Space Mono'
     // ctx.font = 'normal 8.78pt Liberation Mono'
   }
 
@@ -1254,5 +1258,27 @@ class Editor {
   }
 }
 
-const editor = new Editor()
-onmessage = ({ data }) => editor[data.call](data)
+const fontFace = new FontFace(
+  'Space Mono',
+  "local('Space Mono'), local('SpaceMono-Regular'), url(https://fonts.gstatic.com/s/spacemono/v5/i7dPIFZifjKcF5UAWdDRYEF8RQ.woff2) format('woff2')"
+  // "local('Shadows Into Light'), local('ShadowsIntoLight'), url(https://fonts.gstatic.com/s/shadowsintolight/v7/UqyNK9UOIntux_czAvDQx_ZcHqZXBNQzdcD55TecYQ.woff2) format('woff2')"
+);
+// add it to the list of fonts our worker supports
+self.fonts.add(fontFace);
+
+// async function loadFonts() {
+//   const font = new FontFace('myfont', 'url()');
+//   // wait for font to be loaded
+//   await font.load();
+//   // add font to document
+//   self.fonts.add(font);
+//   // enable font with CSS class
+//   // document.body.classList.add('fonts-loaded');
+// }
+
+fontFace.load().then(() => {
+  // console.log('loaded')
+  const editor = new Editor()
+  onmessage = ({ data }) => editor[data.call](data)
+  postMessage({ call: 'onready' })
+})

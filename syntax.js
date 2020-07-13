@@ -9,13 +9,14 @@ var syntax = Regexp.join([
   'newline',
   // 'comment',
   // 'operator',
+  // 'symbol',
   // 'params',
   'attribute',
   // 'keyword',
-  ['variable', R(['declare', 'variable','call'], '')],
+  ['property', R(['declare'])],
+  ['variable', R(['variable','call'], '')],
   ['keyword', R(['operator', 'keyword'], '')],
   // 'string',
-  // 'symbol',
   'definition',
   ['number', R(['special', 'number'], '')],
 ], 'gm')
@@ -56,7 +57,7 @@ export default function Syntax(o) {
 Syntax.prototype.entities = entities;
 
 Syntax.prototype.highlight = function(code, offset) {
-  code += '\n*/`\n\n'
+  code += '\n\n*/`\n\n'
 
   // code = this.createIndents(code);
   code = this.createBlocks(code);
@@ -83,7 +84,7 @@ Syntax.prototype.highlight = function(code, offset) {
   // code = this.restoreBlocks(code);
   // code = code.replace(Indent.regexp, Indent.replacer);
 
-  return pieces;
+  return pieces
 };
 
 Syntax.prototype.createIndents = function(code) {

@@ -94,20 +94,38 @@ export default [{
   id: "wavepot",
   name: "Wavepot",
   highlights: {
-    background: "#1f1f1f",
-    text: "#fafaf2",
-    variable: "#5099bc",
-    attribute: "#fafa00",
-    definition: "#ff272f",
-    keyword: "#ff272f",
+    background: "#292923",
+    text: "#e1dba9", //"#f7f7f3",
+    variable: "#41baff",
+    attribute: "#f2f2f2", //"#95e124",
+    definition: "#ffa910", //ff372f",
+    keyword: "#ff4831",
     operator: "#fff",
-    property: "#a6e22e",
-    number: "#ae81ff",
-    string: "#00ff00",
-    comment: "#75715e",
+    property: "#a2a2af",
+    number: "#95e124", //"#fff", //"#f2e700", //"#fff", //"#ff69fe",
+    string: "#bf828a",// "#ff69fe", //"#f2e700",
+    comment: "#75612e",
     meta: "#555",
     tag: "#bc6283"
   }
+// }, {
+//   id: "wavepot",
+//   name: "Wavepot",
+//   highlights: {
+//     background: "#272723",
+//     text: "#f2f2f2", //"#f7f7f3",
+//     variable: "#33aaff",
+//     attribute: "#e4e480",
+//     definition: "#ff2a2f",
+//     keyword: "#ff2a2f",
+//     operator: "#fff",
+//     property: "#a6e22e",
+//     number: "#e38bbb",
+//     string: "#e38bbb",
+//     comment: "#75715e",
+//     meta: "#555",
+//     tag: "#bc6283"
+//   }
 }, {
   id: "night-owl",
   name: "Night Owl",

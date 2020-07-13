@@ -87,6 +87,7 @@ const createEventsHandler = parent => {
 }
 
 const createEditor = (width, height) => {
+  let onready
   let textarea
   let selectionText = ''
   let history = { length: 1, needle: 1 }
@@ -171,6 +172,9 @@ const createEditor = (width, height) => {
   worker.onerror = e => console.error(e)
 
   const methods = {
+    onready () {
+      onready()
+    },
     onhistory ({ length, needle }) {
       const lastNeedle = history.needle
       history.length = length
@@ -299,9 +303,11 @@ const createEditor = (width, height) => {
     worker,
     handleEvent,
     setup () {
-      const pos = canvas.getBoundingClientRect().toJSON()
-      const outerCanvas = canvas.transferControlToOffscreen()
-      worker.postMessage({ call: 'setup', pos, outerCanvas, pixelRatio }, [outerCanvas])
+      onready = () => {
+        const pos = canvas.getBoundingClientRect().toJSON()
+        const outerCanvas = canvas.transferControlToOffscreen()
+        worker.postMessage({ call: 'setup', pos, outerCanvas, pixelRatio }, [outerCanvas])
+      }
     }
   }
 }
@@ -317,14 +323,19 @@ const create = (width, height) => {
   editors.push(editor)
 }
 
-// create(window.innerWidth - 260, 200)
-// create(window.innerWidth, 200)
-// create(200, 200)
-// create(300, window.innerHeight)
-// create(300, window.innerHeight)
-// create(300, window.innerHeight)
+// document.fonts.ready.then((fontFaceSet) => {
+  // console.log(fontFaceSet.size)
+    // console.log(fontFaceSet.size, 'FontFaces loaded.');
+    // document.getElementById('waitScreen').style.display = 'none';
+  // create(window.innerWidth - 260, 200)
+  // create(window.innerWidth, 200)
+  // create(200, 200)
+  // create(300, window.innerHeight)
+  // create(300, window.innerHeight)
+  // create(300, window.innerHeight)
 create(window.innerWidth, window.innerHeight)
-// for (let i = 0; i < 40; i++) create(70, 70)
+  // for (let i = 0; i < 40; i++) create(70, 70)
+// });
 
 
 const targets = editors.map(editor => ({
