@@ -30,9 +30,9 @@ var AnyChar = /\S/g;
 
 var Blocks = Regexp.join([
   'comment',
-  'string',
+  // 'string',
   // ['definition', R(['arguments']), '^'],
-  // ['string', R(['template string'])],
+  ['number', R(['string'])],
   'regexp',
 ], 'gm');
 

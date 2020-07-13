@@ -2,7 +2,14 @@ html, body {
   margin: 0;
   padding: 0;
   overflow: hidden;
+}
+
+* {
   font-family: 'Space Mono'; /*Liberation Mono';*/
+  font-variant-ligatures: none;
+  font-feature-settings: "kern" 0, "liga" 0, "clig" 0, "calt" 0;
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
 }
 
 .editor {

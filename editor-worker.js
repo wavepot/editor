@@ -1260,8 +1260,9 @@ class Editor {
 
 const fontFace = new FontFace(
   'Space Mono',
-  "local('Space Mono'), local('SpaceMono-Regular'), url(https://fonts.gstatic.com/s/spacemono/v5/i7dPIFZifjKcF5UAWdDRYEF8RQ.woff2) format('woff2')"
-  // "local('Shadows Into Light'), local('ShadowsIntoLight'), url(https://fonts.gstatic.com/s/shadowsintolight/v7/UqyNK9UOIntux_czAvDQx_ZcHqZXBNQzdcD55TecYQ.woff2) format('woff2')"
+  `local('Space Mono'),
+   local('SpaceMono-Regular'),
+   url('/fonts/SpaceMono-Regular.woff2') format('woff2')`,
 );
 // add it to the list of fonts our worker supports
 self.fonts.add(fontFace);
