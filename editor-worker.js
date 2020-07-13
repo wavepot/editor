@@ -176,26 +176,42 @@ class Editor {
 
     // this.emit('input', text, this.caret.copy(), this.mark.copy(), this.mark.active);
 
+    const matchSymbol = {
+      '\'': '\'',
+      '"': '"',
+      '`': '`',
+      '(': ')',
+      '[': ']',
+      '{': '}',
+      ')': '(',
+      ']': '[',
+      '}': '{',
+    }
+
     const line = this.buffer.getLineText(this.caret.pos.y)
     const right = line[this.caret.pos.x]
+    let left = line[this.caret.pos.x - 1]
     const hasRightSymbol = ['\'','"','`','}',']',')'].includes(right)
+    let hasMatchSymbol = hasRightSymbol && (matchSymbol[text] === left)
 
     let indent = 0
     let hasLeftSymbol
 
     // apply indent on enter
     if (NEWLINE.test(text)) {
-      const left = line[this.caret.pos.x - 1]
-      const isEndOfLine = this.caret.pos.x === line.length - 1
+      left = line.slice(0, this.caret.pos.x).trim().slice(-1)
+      const isEndOfLine = this.caret.pos.x >= line.trim().length - 1
       hasLeftSymbol = ['{','[','('].includes(left)
-
       indent = line.match(/\S/)?.index ?? line.length - 1
+      const isBeforeIndent = this.caret.pos.x < indent
 
       if (hasLeftSymbol) indent += 2
 
-      if (isEndOfLine || hasLeftSymbol) {
+      // if (isEndOfLine || hasLeftSymbol) {
+      if (!isBeforeIndent) {
         text += ' '.repeat(indent)
       }
+      // }
     }
 
     if (hasLeftSymbol && hasRightSymbol) {
@@ -204,7 +220,7 @@ class Editor {
 
     let length = 1
 
-    if (!(hasRightSymbol && ['\'','"','`','}',']',')'].includes(text))) {
+    if (!(hasMatchSymbol && ['\'','"','`','}',']',')'].includes(text))) {
       length = this.buffer.insert(this.caret.pos, text, null, true)
       this.updateSizes()
     }
