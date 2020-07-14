@@ -45,26 +45,30 @@ class Editor {
     this.offsetTop = 0
     this.subEditors = []
     this.buffer = new Buffer
-    this.buffer.on('update', () => {
-      this.history.save()
-      this.updateText()
-    })
-    this.buffer.on('before update', () => {
-      this.history.save()
-      this.updateText()
-    })
     this.syntax = new Syntax()
     this.drawSync = this.drawSync.bind(this)
     this.animationScrollBegin = this.animationScrollBegin.bind(this)
     this.animationScrollFrame = this.animationScrollFrame.bind(this)
   }
 
-  async setup (data, isSubEditor) {
+  async setup (data, controlEditor) {
     const { pos, pixelRatio } = data
     const { width, height } = data.outerCanvas
 
-    this.isSubEditor = isSubEditor
+    this.controlEditor = controlEditor
+    this.isSubEditor = !!this.controlEditor
     this.isLastEditor = true
+
+    this.buffer.on('update', () => {
+      ;(this.controlEditor ?? this).history.setEditor(this)
+      ;(this.controlEditor ?? this).history.save()
+      this.updateText()
+    })
+    this.buffer.on('before update', () => {
+      ;(this.controlEditor ?? this).history.setEditor(this)
+      ;(this.controlEditor ?? this).history.save()
+      this.updateText()
+    })
 
     this.pos = pos
 
@@ -128,28 +132,35 @@ class Editor {
       end: new Point({ x: -1, y: -1 })
     })
 
-    this.history = new History(this)
-    this.history.on('save', () => {
-      postMessage({
-        call: 'onhistory',
-        length: this.history.log.length,
-        needle: this.history.needle
+    if (!this.isSubEditor) {
+      this.history = new History(this)
+      this.history.on('save', () => {
+        postMessage({
+          call: 'onhistory',
+          length: this.history.log.length,
+          needle: this.history.needle
+        })
       })
-    })
+    }
 
     this.title = this.title || 'getPointTabs'
     // this.setText('')
     // this.setText('/*""*/\n//hello\nfoo(\'hello\').indexOf(\'\\t\') // foo\nhi"hello"\n// yo')
     this.setText(this[this.title].toString()) //getPointTabs.toString()) // + this.setup.toString())
     this.moveCaret({ x: 0, y: 0 })
+    this.mark.set({ begin: { x: 5, y: 6 }, end: { x: 5, y: 10 }})
+    this.markActive = true
+    this.updateMark()
     // setTimeout(() => this.scrollBy(0, -6400), 10)
     // setTimeout(() => this.scrollBy(0, -27400), 10)
     if (!this.isSubEditor && data.withSubs) {
       // const second = new Editor()
       await this.addSubEditor(new Editor('erase'))
       await this.addSubEditor(new Editor('addSubEditor'))
-      // await this.addSubEditor(new Editor())
-      // await this.addSubEditor(new Editor())
+      await this.addSubEditor(new Editor('insert'))
+      await this.addSubEditor(new Editor('moveByChars'))
+      await this.addSubEditor(new Editor('onkeydown'))
+      this.onfocus()
       this.draw()
     } else {
       this.draw()
@@ -163,7 +174,7 @@ class Editor {
       editor.updateSizes(true)
       editor.updateText()
     })
-    await editor.setup(this.canvas, true)
+    await editor.setup(this.canvas, this)
     this.subEditors.push(editor)
     // editor.setText(this.erase.toString())
     // editor.title = 'erase'
@@ -174,13 +185,15 @@ class Editor {
 
   erase (moveByChars = 0) {
     if (this.markActive) {
-      this.history.save(true)
+      ;(this.controlEditor ?? this).history.setEditor(this)
+      ;(this.controlEditor ?? this).history.save(true)
       const area = this.mark.get()
       this.moveCaret(area.begin)
       this.buffer.removeArea(area)
       this.markClear(true)
     } else {
-      this.history.save()
+      ;(this.controlEditor ?? this).history.setEditor(this)
+      ;(this.controlEditor ?? this).history.save()
       if (moveByChars) this.moveByChars(moveByChars)
       // const left = line[this.caret.pos.x]
       // let line = this.buffer.getLineText(this.caret.pos.y)
@@ -503,7 +516,11 @@ class Editor {
   }
 
   keepCaretInView () {
-    const target = this.animationRunning ? this.animationScrollTarget : this.scroll
+    let target = this
+
+    if (this.controlEditor) target = this.controlEditor
+
+    target = target.animationRunning ? target.animationScrollTarget : target.scroll
 
     const p = this.caret.px
 
@@ -513,14 +530,14 @@ class Editor {
     - (this.gutter.width / this.canvas.pixelRatio)
     const right = left + width
     const top = -(
-      target.y / this.canvas.pixelRatio
+      (target.y - this.offsetTop - (this.controlEditor?.scroll.y ?? 0)) / this.canvas.pixelRatio
     + this.canvas.padding
     )
     const height = this.view.height / this.canvas.pixelRatio
     const bottom = top + height
 
-    const x = p.x //* this.char.width
-    const y = p.y //* this.line.height - this.line.padding
+    const x = p.x
+    const y = p.y
 
     const dx =
       x < left ? left - x
@@ -553,6 +570,45 @@ class Editor {
       - this.line.padding
       - .5
     })
+  }
+
+  setCaretByMouse ({ clientX, clientY }) {
+    const y = Math.max(
+      0,
+      Math.min(
+        this.sizes.loc,
+        Math.floor(
+          (clientY - (
+            this.scroll.y / this.canvas.pixelRatio
+          - this.offsetTop / this.canvas.pixelRatio
+          + this.canvas.padding
+          + this.titlebar.height / this.canvas.pixelRatio
+          ))
+        / this.line.height
+        )
+      )
+    )
+
+    let x = Math.max(
+      0,
+      Math.round(
+        (clientX - (this.scroll.x + this.canvas.gutter.width + this.gutter.padding) / this.canvas.pixelRatio)
+      / this.char.width
+      )
+    )
+
+    const actualIndex = this.getCoordsTabs({ x, y })
+
+    x = Math.max(
+      0,
+      Math.min(
+        actualIndex,
+        this.buffer.getLineLength(y)
+      )
+    )
+
+    this.caret.align = x
+    this.setCaret({ x, y })
   }
 
   setText (text) {
@@ -835,18 +891,18 @@ class Editor {
     // draw mark layer
     const { begin } = this.mark.get()
 
-    const y = begin.y * this.line.height * this.canvas.pixelRatio + this.offsetTop
+    const y = begin.y * this.line.height * this.canvas.pixelRatio //+ (Math.max(0, -this.offsetTop))
 
     this.ctx.outer.drawImage(
       this.canvas.mark,
       -this.scroll.x, // sx
-      -Math.min(0, (y + this.scroll.y)), //Math.max(0, y - this.scroll.y), // sy
+      -Math.min(0, (y + this.scroll.y - this.offsetTop)), // sy
       this.canvas.mark.width,// sw
       this.canvas.mark.height, // sh
       this.canvas.gutter.width, // dx
       Math.max(
         this.titlebar.height,
-        y + this.titlebar.height + this.scroll.y
+        y + this.titlebar.height + this.scroll.y - this.offsetTop
       ), // dy
       this.canvas.mark.width, // dw
       this.canvas.mark.height // dh
@@ -860,10 +916,10 @@ class Editor {
       this.scroll.x - 1
     + (this.caret.px.x
     + this.gutter.width
-    + this.canvas.padding) * this.canvas.pixelRatio,
-      this.scroll.y + this.caret.px.y * this.canvas.pixelRatio + this.titlebar.height + this.offsetTop,
-      this.caret.width * this.canvas.pixelRatio,
-      this.caret.height * this.canvas.pixelRatio
+    + this.canvas.padding) * this.canvas.pixelRatio, // dx
+      this.scroll.y + this.caret.px.y * this.canvas.pixelRatio + this.titlebar.height - this.offsetTop, // dy
+      this.caret.width * this.canvas.pixelRatio, // dw
+      this.caret.height * this.canvas.pixelRatio // dh
     )
   }
 
@@ -928,7 +984,11 @@ class Editor {
     )
   }
 
-  drawSync () {
+  drawSync (noDelegate = false) {
+    if (this.isSubEditor && !noDelegate) {
+      this.controlEditor.drawSync()
+      return
+    }
     if (!this.isSubEditor) this.setOffsetTop(0)
     let offsetTop = this.scroll.y + this.canvas.text.height + this.titlebar.height
     this.subEditors.forEach(editor => {
@@ -947,12 +1007,16 @@ class Editor {
     if (!this.isSubEditor) this.drawVertScrollbar()
     this.drawText()
     this.drawGutter()
-    this.subEditors.forEach(editor => editor.isVisible && editor.drawSync())
+    this.subEditors.forEach(editor => editor.isVisible && editor.drawSync(true))
   }
 
   draw () {
-    cancelAnimationFrame(this.drawAnimFrame)
-    this.drawAnimFrame = requestAnimationFrame(this.drawSync)
+    if (this.isSubEditor) {
+      this.controlEditor.draw()
+    } else {
+      cancelAnimationFrame(this.drawAnimFrame)
+      this.drawAnimFrame = requestAnimationFrame(this.drawSync)
+    }
   }
 
   scrollBy (deltaX, deltaY, sync = false) {
@@ -1046,76 +1110,80 @@ class Editor {
     this.scrollBy(dx, dy, true)
   }
 
+  maybeDelegateMouseEvent (eventName, e) {
+    if (this.isSubEditor) return false
+    for (const editor of this.subEditors.values()) {
+      if (e.clientY*2 > -editor.offsetTop
+      && e.clientY*2 < -editor.offsetTop
+      + editor.canvas.gutter.height
+      + editor.titlebar.height
+      ) {
+        if (eventName === 'onmousedown') {
+          if (this.focusedEditor !== editor) this.focusedEditor?.onblur()
+          this.focusedEditor = editor
+        }
+        editor[eventName](e)
+        return true
+      }
+    }
+
+    return false
+  }
+
+  maybeDelegateEvent (eventName, e) {
+    if (this.isSubEditor || this.focusedEditor === this) return false
+    this.focusedEditor[eventName](e)
+    return true
+  }
+
   onmouseenter () {}
   onmouseover () {}
   onmouseout () {}
 
-  onmousewheel ({ deltaX, deltaY }) {
+  onmousewheel (e) {
+    let { deltaX, deltaY } = e
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
-    deltaX *= 320
-      this.animateScrollBy(deltaX, 0, 'linear')
+      if (!this.maybeDelegateMouseEvent('onmousewheel', e)) {
+        deltaX *= 320
+        this.animateScrollBy(deltaX, 0, 'linear')
+      }
     } else {
-    deltaY *= 800
+      deltaY *= 800
       this.animateScrollBy(0, deltaY, 'linear')
     }
-  }
-
-  setCaretByMouse ({ clientX, clientY }) {
-    const y = Math.max(
-      0,
-      Math.min(
-        this.sizes.loc,
-        Math.floor(
-          (clientY - (this.scroll.y / this.canvas.pixelRatio + this.canvas.padding + this.titlebar.height / this.canvas.pixelRatio))
-        / this.line.height
-        )
-      )
-    )
-
-    let x = Math.max(
-      0,
-      Math.round(
-        (clientX - (this.scroll.x + this.canvas.gutter.width + this.gutter.padding) / this.canvas.pixelRatio)
-      / this.char.width
-      )
-    )
-
-    const actualIndex = this.getCoordsTabs({ x, y })
-
-    x = Math.max(
-      0,
-      Math.min(
-        actualIndex,
-        this.buffer.getLineLength(y)
-      )
-    )
-
-    this.caret.align = x
-    this.setCaret({ x, y })
   }
 
   onmouseup () {}
 
   onmousedown (e) {
-    if (e.left) {
-      this.markClear()
-      this.updateMark()
-      this.setCaretByMouse(e)
-      this.markBegin()
-      this.draw()
+    if (!this.maybeDelegateMouseEvent('onmousedown', e)) {
+      if (!this.hasFocus) this.onfocus()
+      if (e.left) {
+        this.markClear()
+        this.updateMark()
+        this.setCaretByMouse(e)
+        this.markBegin()
+        this.draw()
+      }
+    } else {
+      if (this.hasFocus) this.onblur()
     }
   }
 
   onmousemove (e) {
-    if (e.left) {
-      this.setCaretByMouse(e)
-      this.markSet()
-      this.keepCaretInView()
-      this.draw()
+    if (!this.maybeDelegateMouseEvent('onmousemove', e)) {
+      if (e.left) {
+        this.setCaretByMouse(e)
+        this.markSet()
+        this.keepCaretInView()
+        this.draw()
+      }
     }
   }
 
   onkeydown (e) {
+    if (this.maybeDelegateEvent('onkeydown', e)) return
+
     this.keys.delete(e.key.toLowerCase())
     this.keys.delete(e.key.toUpperCase())
     this.keys.add(e.key)
@@ -1308,8 +1376,8 @@ class Editor {
       case 'ArrowRight'     : this.moveByChars(+1); break
       case 'ArrowUp'        : this.moveByLines(-1); break
       case 'ArrowDown'      : this.moveByLines(+1); break
-      case 'PageUp'         : this.animateScrollBy(0, -this.page.height, 'ease'); this.moveByLines(-this.page.lines); break
-      case 'PageDown'       : this.animateScrollBy(0, +this.page.height, 'ease'); this.moveByLines(+this.page.lines); break
+      case 'PageUp'         : ;(this.controlEditor ?? this).animateScrollBy(0, -this.page.height, 'ease'); this.moveByLines(-this.page.lines); break
+      case 'PageDown'       : ;(this.controlEditor ?? this).animateScrollBy(0, +this.page.height, 'ease'); this.moveByLines(+this.page.lines); break
       case 'Home'           : this.moveBeginOfLine(true); break
       case 'End'            : this.moveEndOfLine(); break
     }
@@ -1320,6 +1388,8 @@ class Editor {
   }
 
   onkeyup (e) {
+    if (this.maybeDelegateEvent('onkeyup', e)) return
+
     this.keys.delete(e.key.toLowerCase())
     this.keys.delete(e.key.toUpperCase())
     this.keys.delete(e.key)
@@ -1331,21 +1401,25 @@ class Editor {
   }
 
   onpaste ({ text }) {
+    if (this.maybeDelegateEvent('onpaste', { text })) return
     this.insert(text)
   }
 
   onhistory ({ needle }) {
     if (needle !== this.history.needle) {
+      let target
       if (needle < this.history.needle) {
-        this.history.undo(needle)
+        target = this.history.undo(needle)
       } else if (needle > this.history.needle) {
-        this.history.redo(needle)
+        target = this.history.redo(needle)
       }
-      this.updateSizes()
-      this.updateText()
-      this.updateMark()
-      this.keepCaretInView()
-      this.draw()
+      if (target) {
+        target.updateSizes()
+        target.updateText()
+        target.updateMark()
+        target.keepCaretInView()
+        target.draw()
+      }
     }
   }
 
@@ -1356,6 +1430,7 @@ class Editor {
   }
 
   onfocus () {
+    this.focusedEditor = this
     this.hasFocus = true
     this.keys.clear()
     this.draw()
@@ -1371,19 +1446,9 @@ const fontFace = new FontFace(
   `local('Space Mono'),
    local('SpaceMono-Regular'),
    url('/fonts/SpaceMono-Regular.woff2') format('woff2')`,
-);
-// add it to the list of fonts our worker supports
-self.fonts.add(fontFace);
+)
 
-// async function loadFonts() {
-//   const font = new FontFace('myfont', 'url()');
-//   // wait for font to be loaded
-//   await font.load();
-//   // add font to document
-//   self.fonts.add(font);
-//   // enable font with CSS class
-//   // document.body.classList.add('fonts-loaded');
-// }
+self.fonts.add(fontFace)
 
 fontFace.load().then(() => {
   const editor = new Editor()

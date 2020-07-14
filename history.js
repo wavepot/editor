@@ -13,6 +13,13 @@ export default function History(editor) {
 
 History.prototype.__proto__ = Event.prototype
 
+History.prototype.setEditor = function (editor) {
+  if (this.editor !== editor) {
+    this.actuallySave(true)
+  }
+  this.editor = editor
+}
+
 History.prototype.save = function (force) {
   if (this.lastNeedle === this.needle) {
     this.needle++
@@ -47,7 +54,7 @@ History.prototype.undo = function (needle) {
   if (needle < 1) return
 
   this.lastNeedle = this.needle = needle
-  this.checkout('undo', needle)
+  return this.checkout('undo', needle)
 }
 
 History.prototype.redo = function (needle) {
@@ -56,7 +63,7 @@ History.prototype.redo = function (needle) {
   if (needle < 1) return
 
   this.lastNeedle = this.needle = needle
-  this.checkout('redo', needle - 1)
+  return this.checkout('redo', needle - 1)
 }
 
 History.prototype.checkout = function (type, n) {
@@ -66,9 +73,9 @@ History.prototype.checkout = function (type, n) {
   let log = commit.log
 
   commit = this.log[n][type]
-  this.editor.markActive = commit.markActive
-  this.editor.mark.set(commit.mark.copy())
-  this.editor.setCaret(commit.caret.copy())
+  commit.editor.markActive = commit.markActive
+  commit.editor.mark.set(commit.mark.copy())
+  commit.editor.setCaret(commit.caret.copy())
 
   log = 'undo' === type
     ? log.slice().reverse()
@@ -81,40 +88,46 @@ History.prototype.checkout = function (type, n) {
     switch (action) {
       case 'insert':
         if ('undo' === type) {
-          this.editor.buffer.remove(offsets, true)
+          commit.editor.buffer.remove(offsets, true)
         } else {
-          this.editor.buffer.insert(this.editor.buffer.getOffsetPoint(offsets[0]), text, true)
+          commit.editor.buffer.insert(commit.editor.buffer.getOffsetPoint(offsets[0]), text, true)
         }
         break
       case 'remove':
         if ('undo' === type) {
-          this.editor.buffer.insert(this.editor.buffer.getOffsetPoint(offsets[0]), text, true)
+          commit.editor.buffer.insert(commit.editor.buffer.getOffsetPoint(offsets[0]), text, true)
         } else {
-          this.editor.buffer.remove(offsets, true)
+          commit.editor.buffer.remove(offsets, true)
         }
         break
     }
   })
 
   this.emit('change')
+
+  return commit.editor
 }
 
 History.prototype.commit = function () {
-  var log = this.editor.buffer.log
-  this.editor.buffer.log = []
+  var editor = this.meta.editor
+  var log = editor.buffer.log
+  editor.buffer.log = []
   return {
+    editor,
     log: log,
     undo: this.meta,
     redo: {
-      caret: this.editor.caret.pos.copy(),
-      mark: this.editor.mark.copy(),
-      markActive: this.editor.markActive
+      editor: editor,
+      caret: editor.caret.pos.copy(),
+      mark: editor.mark.copy(),
+      markActive: editor.markActive
     }
   }
 }
 
 History.prototype.saveMeta = function () {
   this.meta = {
+    editor: this.editor,
     caret: this.editor.caret.pos.copy(),
     mark: this.editor.mark.copy(),
     markActive: this.editor.markActive
