@@ -141,12 +141,14 @@ class Editor {
     this.moveCaret({ x: 0, y: 0 })
     // setTimeout(() => this.scrollBy(0, -6400), 10)
     // setTimeout(() => this.scrollBy(0, -27400), 10)
-    if (!this.isSubEditor) {
+    if (!this.isSubEditor && data.withSubs) {
       // const second = new Editor()
       await this.addSubEditor(new Editor())
       await this.addSubEditor(new Editor())
       await this.addSubEditor(new Editor())
       await this.addSubEditor(new Editor())
+      this.draw()
+    } else {
       this.draw()
     }
   }
@@ -575,11 +577,16 @@ class Editor {
       + ((1 + this.sizes.loc) * this.line.height)
       * this.canvas.pixelRatio
 
-      this.canvas.overscrollHeight =
+      this.subEditorsHeight =
         (this.subEditors.reduce((p, n) => p + n.canvas.text.height, 0)
-        + this.titlebar.height * this.subEditors.length)
-        + this.canvas.text.height
-        - (this.line.height + this.line.padding) * this.canvas.pixelRatio
+      + this.titlebar.height * this.subEditors.length)
+
+      this.canvas.overscrollHeight =
+        // (this.subEditors.reduce((p, n) => p + n.canvas.text.height, 0)
+      // + this.titlebar.height * this.subEditors.length)
+        this.subEditorsHeight
+      + this.canvas.text.height
+      - (this.line.height + this.line.padding) * this.canvas.pixelRatio
 
       this.canvas.gutter.width =
         (this.gutter.width + this.canvas.padding)
@@ -826,7 +833,7 @@ class Editor {
 
   drawScrollbars () {
     // draw scrollbars
-    const scrollbar = { width: 10 }
+    const scrollbar = { width: 30 }
     scrollbar.margin = scrollbar.width / 2 / 2
 
     this.ctx.outer.strokeStyle = theme.scrollbar
@@ -843,12 +850,8 @@ class Editor {
         this.canvas.text.width
       + this.char.width * 2 * this.canvas.pixelRatio,
       height:
-        this.canvas.overscrollHeight
-      // - (this.canvas.text.height + (this.subEditors.reduce((p, n) => p + n.canvas.text.height, 0)))
-
-      // + (this.titlebar.height
-      // + (this.line.height + this.line.padding) * this.subEditors.length
-      // + (this.titlebar.height * this.subEditors.length)) * this.canvas.pixelRatio
+        this.canvas.text.height
+      + this.subEditorsHeight
     }
 
     const scale = {
@@ -864,8 +867,8 @@ class Editor {
     * ((view.width - scrollbar.horiz) || 1) || 0
 
     const y =
-    // - (this.scroll.y / ((this.canvas.text.height - this.canvas.height) || 1))
-    - (this.scroll.y / (this.canvas.overscrollHeight || 1))
+    - (this.scroll.y / (
+      (this.canvas.text.height + this.subEditorsHeight - this.canvas.height) || 1))
     * ((view.height - scrollbar.vert) || 1)
 
     if (x + view.width - scrollbar.horiz > 12) {
@@ -875,12 +878,12 @@ class Editor {
       this.ctx.outer.stroke()
     }
 
-    if ((scale.height >= 1 && y > 2) || scale.height < 1) {
+    // if ((scale.height >= 1 && y > 2) || scale.height < 1) {
       this.ctx.outer.beginPath()
       this.ctx.outer.moveTo(this.canvas.width - scrollbar.margin, y)
       this.ctx.outer.lineTo(this.canvas.width - scrollbar.margin, y + scrollbar.vert)
       this.ctx.outer.stroke()
-    }
+    // }
   }
 
   drawGutter () {

@@ -302,11 +302,11 @@ const createEditor = (width, height) => {
     canvas,
     worker,
     handleEvent,
-    setup () {
+    setup (withSubs = false) {
       onready = () => {
         const pos = canvas.getBoundingClientRect().toJSON()
         const outerCanvas = canvas.transferControlToOffscreen()
-        worker.postMessage({ call: 'setup', pos, outerCanvas, pixelRatio }, [outerCanvas])
+        worker.postMessage({ call: 'setup', pos, outerCanvas, pixelRatio, withSubs }, [outerCanvas])
       }
     }
   }
@@ -316,10 +316,10 @@ const events = createEventsHandler(window)
 
 const editors = []
 
-const create = (width, height) => {
+const create = (width, height, withSubs) => {
   const editor = createEditor(width, height)
   document.body.appendChild(editor.canvas)
-  editor.setup()
+  editor.setup(withSubs)
   editors.push(editor)
 }
 
@@ -329,7 +329,7 @@ const create = (width, height) => {
     // document.getElementById('waitScreen').style.display = 'none';
   // create(window.innerWidth - 260, 200)
   // create(window.innerWidth, 200)
-  create(200, 200)
+  create(200, 200, true)
   create(300, window.innerHeight)
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
