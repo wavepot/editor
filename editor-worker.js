@@ -41,6 +41,8 @@ class Editor {
   constructor () {
     this.pos = { x: 0, y: 0 }
     this.scroll = { x: 0, y: 0 }
+    this.offsetTop = 0
+    this.subEditors = []
     this.buffer = new Buffer
     this.buffer.on('update', () => {
       this.history.save()
@@ -51,19 +53,22 @@ class Editor {
       this.updateText()
     })
     this.syntax = new Syntax()
-    this.syncDraw = this.syncDraw.bind(this)
+    this.drawSync = this.drawSync.bind(this)
     this.animationScrollBegin = this.animationScrollBegin.bind(this)
     this.animationScrollFrame = this.animationScrollFrame.bind(this)
   }
 
-  async setup (data) {
+  async setup (data, isSubEditor) {
     const { pos, pixelRatio } = data
     const { width, height } = data.outerCanvas
 
+    this.isSubEditor = isSubEditor
+    this.isLastEditor = true
+
     this.pos = pos
 
-    this.canvas = { width, height, pixelRatio, padding: 3 }
-    this.canvas.outer = data.outerCanvas
+    this.canvas = { pos, width, height, pixelRatio, padding: 3 }
+    this.canvas.outer = this.canvas.outerCanvas = data.outerCanvas
     this.canvas.gutter = new OffscreenCanvas(width, height)
     this.canvas.mark = new OffscreenCanvas(width, height)
     this.canvas.text = new OffscreenCanvas(width, height)
@@ -119,7 +124,7 @@ class Editor {
       end: new Point({ x: -1, y: -1 })
     })
 
-    this.title = 'untitled'
+    this.title = 'getPointTabs'
 
     this.history = new History(this)
     this.history.on('save', () => {
@@ -132,11 +137,34 @@ class Editor {
 
     // this.setText('')
     // this.setText('/*""*/\n//hello\nfoo(\'hello\').indexOf(\'\\t\') // foo\nhi"hello"\n// yo')
-    this.setText(this.constructor.toString()) // + this.setup.toString())
+    this.setText(this.getPointTabs.toString()) // + this.setup.toString())
     this.moveCaret({ x: 0, y: 0 })
-    this.draw()
     // setTimeout(() => this.scrollBy(0, -6400), 10)
     // setTimeout(() => this.scrollBy(0, -27400), 10)
+    if (!this.isSubEditor) {
+      // const second = new Editor()
+      await this.addSubEditor(new Editor())
+      await this.addSubEditor(new Editor())
+      await this.addSubEditor(new Editor())
+      await this.addSubEditor(new Editor())
+      this.draw()
+    }
+  }
+
+  async addSubEditor (editor) {
+    this.isLastEditor = false
+    this.subEditors.forEach(editor => {
+      editor.isLastEditor = false
+      editor.updateSizes(true)
+      editor.updateText()
+    })
+    await editor.setup(this.canvas, true)
+    this.subEditors.push(editor)
+    editor.setText(this.erase.toString())
+    editor.title = 'erase'
+    this.updateSizes(true)
+    this.updateText()
+    // this.draw()
   }
 
   erase (moveByChars = 0) {
@@ -528,7 +556,7 @@ class Editor {
     if (this.updateSizes()) this.updateText()
   }
 
-  updateSizes () {
+  updateSizes (force = false) {
     let changed = false
 
     const loc = this.buffer.loc()
@@ -536,7 +564,7 @@ class Editor {
     const { tabs, remainder } = this.getPointTabs({ x: longestLine.length, y: longestLine.lineNumber })
     const longestLineLength = longestLine.length + tabs + remainder
 
-    if (loc !== this.sizes.loc) {
+    if (loc !== this.sizes.loc || force) {
       changed = true
       this.sizes.loc = loc
       this.gutter.size = (1 + this.sizes.loc).toString().length
@@ -548,15 +576,19 @@ class Editor {
       * this.canvas.pixelRatio
 
       this.canvas.overscrollHeight =
-        this.canvas.text.height
-      - (this.line.height + this.line.padding) * this.canvas.pixelRatio
+        (this.subEditors.reduce((p, n) => p + n.canvas.text.height, 0)
+        + this.titlebar.height * this.subEditors.length)
+        + this.canvas.text.height
+        - (this.line.height + this.line.padding) * this.canvas.pixelRatio
 
       this.canvas.gutter.width =
         (this.gutter.width + this.canvas.padding)
       * this.canvas.pixelRatio
 
       this.canvas.gutter.height =
-        this.canvas.overscrollHeight + this.view.height
+        !this.isLastEditor //subEditors.length > 0
+        ? this.canvas.text.height //- this.titlebar.height * this.canvas.pixelRatio
+        : this.canvas.overscrollHeight + this.view.height
 
       this.ctx.gutter.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
       this.updateGutter()
@@ -735,7 +767,7 @@ class Editor {
     this.ctx.outer.fillStyle = theme.titlebar
     this.ctx.outer.fillRect(
       0,
-      0,
+      Math.max(0, -this.offsetTop),
       this.canvas.width,
       this.titlebar.height + 2
     )
@@ -745,10 +777,9 @@ class Editor {
     this.ctx.outer.fillText(
       this.title,
       5,
-      2.5
+      2.5 - Math.min(0, this.offsetTop / this.canvas.pixelRatio)
     )
     this.ctx.outer.restore()
-    // this.ctx.outer.scale(1,1)
   }
 
   drawText () {
@@ -756,7 +787,7 @@ class Editor {
     this.ctx.outer.drawImage(
       this.canvas.text,
       -this.scroll.x,
-      -this.scroll.y - this.titlebar.height,
+      -this.scroll.y - this.titlebar.height + this.offsetTop,
       this.canvas.width,
       this.canvas.height,
       this.canvas.gutter.width,
@@ -773,7 +804,7 @@ class Editor {
     this.ctx.outer.drawImage(
       this.canvas.mark,
       this.scroll.x + this.canvas.gutter.width,
-      this.scroll.y + begin.y * this.line.height * this.canvas.pixelRatio + this.titlebar.height,
+      this.scroll.y + begin.y * this.line.height * this.canvas.pixelRatio + this.titlebar.height + this.offsetTop,
       this.canvas.mark.width,
       this.canvas.mark.height
     )
@@ -787,7 +818,7 @@ class Editor {
     + (this.caret.px.x
     + this.gutter.width
     + this.canvas.padding) * this.canvas.pixelRatio,
-      this.scroll.y + this.caret.px.y * this.canvas.pixelRatio + this.titlebar.height,
+      this.scroll.y + this.caret.px.y * this.canvas.pixelRatio + this.titlebar.height + this.offsetTop,
       this.caret.width * this.canvas.pixelRatio,
       this.caret.height * this.canvas.pixelRatio
     )
@@ -803,8 +834,8 @@ class Editor {
     // this.ctx.outer.lineCap = 'round'
 
     const view = {
-      height: this.canvas.height,
-      width: this.canvas.width - this.canvas.gutter.width
+      width: this.canvas.width - this.canvas.gutter.width,
+      height: this.canvas.height
     }
 
     const area = {
@@ -812,7 +843,12 @@ class Editor {
         this.canvas.text.width
       + this.char.width * 2 * this.canvas.pixelRatio,
       height:
-        this.canvas.text.height
+        this.canvas.overscrollHeight
+      // - (this.canvas.text.height + (this.subEditors.reduce((p, n) => p + n.canvas.text.height, 0)))
+
+      // + (this.titlebar.height
+      // + (this.line.height + this.line.padding) * this.subEditors.length
+      // + (this.titlebar.height * this.subEditors.length)) * this.canvas.pixelRatio
     }
 
     const scale = {
@@ -828,7 +864,8 @@ class Editor {
     * ((view.width - scrollbar.horiz) || 1) || 0
 
     const y =
-    - (this.scroll.y / ((this.canvas.text.height - this.canvas.height) || 1))
+    // - (this.scroll.y / ((this.canvas.text.height - this.canvas.height) || 1))
+    - (this.scroll.y / (this.canvas.overscrollHeight || 1))
     * ((view.height - scrollbar.vert) || 1)
 
     if (x + view.width - scrollbar.horiz > 12) {
@@ -851,29 +888,35 @@ class Editor {
     this.ctx.outer.drawImage(
       this.canvas.gutter,
       0,
-      -this.scroll.y - this.titlebar.height,
+      -this.scroll.y,
       this.canvas.gutter.width,
       this.canvas.gutter.height,
       0,
-      0,
+      -this.offsetTop + this.titlebar.height,
       this.canvas.gutter.width,
       this.canvas.gutter.height
     )
   }
 
-  syncDraw () {
-    this.clear()
+  drawSync () {
+    if (!this.isSubEditor) this.clear()
     if (this.markActive) this.drawMark()
     if (this.hasFocus) this.drawCaret()
     this.drawText()
     this.drawGutter()
+    let bottomPx = this.scroll.y + this.canvas.text.height + this.titlebar.height
     this.drawTitle()
-    this.drawScrollbars()
+    this.subEditors.forEach(editor => {
+      editor.offsetTop = -bottomPx
+      editor.drawSync()
+      bottomPx += editor.canvas.gutter.height + editor.titlebar.height
+    })
+    if (!this.isSubEditor) this.drawScrollbars()
   }
 
   draw () {
     cancelAnimationFrame(this.drawAnimFrame)
-    this.drawAnimFrame = requestAnimationFrame(this.syncDraw)
+    this.drawAnimFrame = requestAnimationFrame(this.drawSync)
   }
 
   scrollBy (deltaX, deltaY, sync = false) {
@@ -887,7 +930,7 @@ class Editor {
       -this.canvas.overscrollHeight,
       Math.min(0, this.scroll.y)
     )
-    if (sync) this.syncDraw()
+    if (sync) this.drawSync()
     else this.draw()
   }
 
