@@ -13,7 +13,9 @@ const colors = {
   caret: '#77f',
   gutter: '#333',
   scrollbar: '#555',
-  lineNumbers: '#888'
+  lineNumbers: '#888',
+  titlebar: '#000',
+  title: '#fff',
 }
 
 const theme = {
@@ -92,8 +94,15 @@ class Editor {
 
     this.tabSize = 2
 
+    this.titlebar = { height: this.line.height * this.canvas.pixelRatio }
+
+    this.view = {
+      width: this.canvas.width,
+      height: this.canvas.height - this.titlebar.height //* this.canvas.pixelRatio
+    }
+
     this.page = {}
-    this.page.lines = Math.floor(this.canvas.height / this.canvas.pixelRatio / this.line.height)
+    this.page.lines = Math.floor(this.view.height / this.canvas.pixelRatio / this.line.height)
     this.page.height = this.line.height * this.page.lines * this.canvas.pixelRatio
 
     this.caret = {
@@ -110,8 +119,7 @@ class Editor {
       end: new Point({ x: -1, y: -1 })
     })
 
-    this.text = ''
-    this.lines = []
+    this.title = 'untitled'
 
     this.history = new History(this)
     this.history.on('save', () => {
@@ -476,7 +484,7 @@ class Editor {
       target.y / this.canvas.pixelRatio
     + this.canvas.padding
     )
-    const height = this.canvas.height / this.canvas.pixelRatio
+    const height = this.view.height / this.canvas.pixelRatio
     const bottom = top + height
 
     const x = p.x //* this.char.width
@@ -548,7 +556,7 @@ class Editor {
       * this.canvas.pixelRatio
 
       this.canvas.gutter.height =
-        this.canvas.overscrollHeight + this.canvas.height
+        this.canvas.overscrollHeight + this.view.height
 
       this.ctx.gutter.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
       this.updateGutter()
@@ -599,7 +607,6 @@ class Editor {
   applyFont (ctx) {
     ctx.textBaseline = 'top'
     ctx.font = 'normal 9.5pt Space Mono'
-    // ctx.font = 'normal 8.78pt Liberation Mono'
   }
 
   updateGutter () {
@@ -723,12 +730,33 @@ class Editor {
     )
   }
 
+  drawTitle () {
+    this.ctx.outer.save()
+    this.ctx.outer.fillStyle = theme.titlebar
+    this.ctx.outer.fillRect(
+      0,
+      0,
+      this.canvas.width,
+      this.titlebar.height + 2
+    )
+    this.applyFont(this.ctx.outer)
+    this.ctx.outer.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
+    this.ctx.outer.fillStyle = theme.title
+    this.ctx.outer.fillText(
+      this.title,
+      5,
+      2.5
+    )
+    this.ctx.outer.restore()
+    // this.ctx.outer.scale(1,1)
+  }
+
   drawText () {
     // draw text layer
     this.ctx.outer.drawImage(
       this.canvas.text,
       -this.scroll.x,
-      -this.scroll.y,
+      -this.scroll.y - this.titlebar.height,
       this.canvas.width,
       this.canvas.height,
       this.canvas.gutter.width,
@@ -745,7 +773,7 @@ class Editor {
     this.ctx.outer.drawImage(
       this.canvas.mark,
       this.scroll.x + this.canvas.gutter.width,
-      this.scroll.y + begin.y * this.line.height * this.canvas.pixelRatio,
+      this.scroll.y + begin.y * this.line.height * this.canvas.pixelRatio + this.titlebar.height,
       this.canvas.mark.width,
       this.canvas.mark.height
     )
@@ -759,7 +787,7 @@ class Editor {
     + (this.caret.px.x
     + this.gutter.width
     + this.canvas.padding) * this.canvas.pixelRatio,
-      this.scroll.y + this.caret.px.y * this.canvas.pixelRatio,
+      this.scroll.y + this.caret.px.y * this.canvas.pixelRatio + this.titlebar.height,
       this.caret.width * this.canvas.pixelRatio,
       this.caret.height * this.canvas.pixelRatio
     )
@@ -823,7 +851,7 @@ class Editor {
     this.ctx.outer.drawImage(
       this.canvas.gutter,
       0,
-      -this.scroll.y,
+      -this.scroll.y - this.titlebar.height,
       this.canvas.gutter.width,
       this.canvas.gutter.height,
       0,
@@ -835,11 +863,12 @@ class Editor {
 
   syncDraw () {
     this.clear()
-    this.drawScrollbars()
     if (this.markActive) this.drawMark()
     if (this.hasFocus) this.drawCaret()
     this.drawText()
     this.drawGutter()
+    this.drawTitle()
+    this.drawScrollbars()
   }
 
   draw () {
@@ -958,7 +987,7 @@ class Editor {
       Math.min(
         this.sizes.loc,
         Math.floor(
-          (clientY - (this.scroll.y / this.canvas.pixelRatio + this.canvas.padding))
+          (clientY - (this.scroll.y / this.canvas.pixelRatio + this.canvas.padding + this.titlebar.height / this.canvas.pixelRatio))
         / this.line.height
         )
       )
