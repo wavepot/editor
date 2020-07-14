@@ -329,11 +329,11 @@ const create = (width, height, withSubs) => {
     // document.getElementById('waitScreen').style.display = 'none';
   // create(window.innerWidth - 260, 200)
   // create(window.innerWidth, 200)
-  create(200, 200, true)
-  create(300, window.innerHeight)
+  // create(200, 200, true)
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
-// create(window.innerWidth, window.innerHeight)
+  // create(300, window.innerHeight)
+create(window.innerWidth, window.innerHeight, true)
   // for (let i = 0; i < 40; i++) create(70, 70)
 // });
 
