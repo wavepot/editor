@@ -38,7 +38,8 @@ const NEWLINE = Regexp.create(['newline'])
 const WORDS = Regexp.create(['words'], 'g')
 
 class Editor {
-  constructor () {
+  constructor (title) {
+    this.title = title
     this.pos = { x: 0, y: 0 }
     this.scroll = { x: 0, y: 0 }
     this.offsetTop = 0
@@ -127,8 +128,6 @@ class Editor {
       end: new Point({ x: -1, y: -1 })
     })
 
-    this.title = 'getPointTabs'
-
     this.history = new History(this)
     this.history.on('save', () => {
       postMessage({
@@ -138,18 +137,19 @@ class Editor {
       })
     })
 
+    this.title = this.title || 'getPointTabs'
     // this.setText('')
     // this.setText('/*""*/\n//hello\nfoo(\'hello\').indexOf(\'\\t\') // foo\nhi"hello"\n// yo')
-    this.setText(this.getPointTabs.toString()) // + this.setup.toString())
+    this.setText(this[this.title].toString()) //getPointTabs.toString()) // + this.setup.toString())
     this.moveCaret({ x: 0, y: 0 })
     // setTimeout(() => this.scrollBy(0, -6400), 10)
     // setTimeout(() => this.scrollBy(0, -27400), 10)
     if (!this.isSubEditor && data.withSubs) {
       // const second = new Editor()
-      await this.addSubEditor(new Editor())
-      await this.addSubEditor(new Editor())
-      await this.addSubEditor(new Editor())
-      await this.addSubEditor(new Editor())
+      await this.addSubEditor(new Editor('erase'))
+      await this.addSubEditor(new Editor('addSubEditor'))
+      // await this.addSubEditor(new Editor())
+      // await this.addSubEditor(new Editor())
       this.draw()
     } else {
       this.draw()
@@ -165,8 +165,8 @@ class Editor {
     })
     await editor.setup(this.canvas, true)
     this.subEditors.push(editor)
-    editor.setText(this.erase.toString())
-    editor.title = 'erase'
+    // editor.setText(this.erase.toString())
+    // editor.title = 'erase'
     this.updateSizes(true)
     this.updateText()
     // this.draw()
@@ -285,7 +285,6 @@ class Editor {
     this.updateText()
     this.keepCaretInView()
     this.draw()
-    // console.log('updated', this.buffer.toString())
   }
 
   markBegin (area) {
@@ -772,6 +771,20 @@ class Editor {
     postMessage({ call: 'onselection', text: this.buffer.getAreaText(this.mark.get()) })
   }
 
+  setOffsetTop (offsetTop) {
+    this.offsetTop = offsetTop
+
+    this.isVisible =
+      -this.offsetTop
+      + this.scroll.y
+      < this.canvas.height
+      && -this.offsetTop
+      + this.scroll.y
+      + this.canvas.gutter.height
+      + this.titlebar.height
+      > 0
+  }
+
   clear () {
     // clear
     this.ctx.outer.fillStyle = theme.background
@@ -864,7 +877,6 @@ class Editor {
       (this.canvas.text.height + this.subEditorsHeight - this.canvas.height) || 1))
     * ((this.scrollbar.view.height - this.scrollbar.vert) || 1)
 
-
     if ((this.scrollbar.scale.height >= 1 && y > 2) || this.scrollbar.scale.height < 1) {
       this.ctx.outer.beginPath()
       this.ctx.outer.moveTo(this.canvas.width - this.scrollbar.margin, y)
@@ -881,23 +893,28 @@ class Editor {
     - (this.scroll.x / (this.canvas.overscrollWidth || 1))
     * ((this.scrollbar.view.width - this.scrollbar.horiz) || 1) || 0
 
-    if (x + this.scrollbar.view.width - this.scrollbar.horiz > 12) {
-      const wy = Math.min(
-        this.canvas.gutter.height - this.offsetTop + this.scroll.y + this.titlebar.height
-      - this.scrollbar.margin,
-      )
-      if (wy > this.titlebar.height - this.scrollbar.width + this.scrollbar.margin) {
-        this.ctx.outer.beginPath()
-        this.ctx.outer.moveTo(this.canvas.gutter.width + x, wy)
-        this.ctx.outer.lineTo(this.canvas.gutter.width + x + this.scrollbar.horiz + 1, wy)
-        this.ctx.outer.stroke()
-      }
+    const y = Math.min(
+      this.canvas.gutter.height
+    - this.offsetTop
+    + this.scroll.y
+    + this.titlebar.height
+    - this.scrollbar.margin,
+      this.canvas.height
+    - this.scrollbar.margin
+    )
+
+    if (y > this.titlebar.height - this.scrollbar.width + this.scrollbar.margin
+    && -this.offsetTop + this.titlebar.height < this.canvas.height
+    && x + this.scrollbar.view.width - this.scrollbar.horiz > 12) {
+      this.ctx.outer.beginPath()
+      this.ctx.outer.moveTo(this.canvas.gutter.width + x, y)
+      this.ctx.outer.lineTo(this.canvas.gutter.width + x + this.scrollbar.horiz + 1, y)
+      this.ctx.outer.stroke()
     }
   }
 
   drawGutter () {
     // draw gutter layer
-    // console.log(this.scroll.y - this.offsetTop)
     this.ctx.outer.drawImage(
       this.canvas.gutter,
       0, // sx
@@ -912,25 +929,25 @@ class Editor {
   }
 
   drawSync () {
+    if (!this.isSubEditor) this.setOffsetTop(0)
     let offsetTop = this.scroll.y + this.canvas.text.height + this.titlebar.height
     this.subEditors.forEach(editor => {
-      editor.offsetTop = -offsetTop
+      editor.setOffsetTop(-offsetTop)
       offsetTop += editor.canvas.gutter.height + editor.titlebar.height
     })
     if (!this.isSubEditor) {
       this.clear()
       this.drawHorizScrollbar()
+      this.subEditors.forEach(editor => editor.isVisible && editor.drawHorizScrollbar())
       this.drawTitle()
-    } else {
-      this.drawHorizScrollbar()
     }
     if (this.markActive) this.drawMark()
     if (this.hasFocus) this.drawCaret()
-    this.subEditors.forEach(editor => editor.drawTitle())
+    this.subEditors.forEach(editor => editor.isVisible && editor.drawTitle())
     if (!this.isSubEditor) this.drawVertScrollbar()
     this.drawText()
     this.drawGutter()
-    this.subEditors.forEach(editor => editor.drawSync())
+    this.subEditors.forEach(editor => editor.isVisible && editor.drawSync())
   }
 
   draw () {
@@ -1369,7 +1386,6 @@ self.fonts.add(fontFace);
 // }
 
 fontFace.load().then(() => {
-  // console.log('loaded')
   const editor = new Editor()
   onmessage = ({ data }) => editor[data.call](data)
   postMessage({ call: 'onready' })
