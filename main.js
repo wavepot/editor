@@ -78,12 +78,14 @@ const app = window.app = {
   },
   drawWaveForm (wave) {
     const ctx = app.waveforms
-    const width = ctx.canvas.width / window.devicePixelRatio + 1
-    const height = 100
+    const width = ctx.canvas.width*4 // window.devicePixelRatio + 1
+    const height = 75
+    ctx.save()
     ctx.fillStyle = '#000' //'#99ff00'
     ctx.fillRect(0, 0, width, height)
-    ctx.strokeStyle = '#a6e22e' //'#99ff00'
-    ctx.lineWidth = 1
+    // ctx.strokeStyle = '#a6e22e' //'#568208' //'#99ff00'
+    ctx.lineWidth = .28
+    ctx.globalCompositeOperation = 'lighter'
     ctx.beginPath()
     const y = height
     const h = height / 2
@@ -95,11 +97,9 @@ const app = window.app = {
       let max = Math.abs(Math.max(...wave.slice(x*w, x*w+w)))
       if (max > 1) {
         ctx.strokeStyle = '#ff0000'
-        // ctx.stroke()
-        console.log('max great than 1')
         max = 1
       }
-      else ctx.strokeStyle = '#a6e22e' //'#99ff00'
+      else ctx.strokeStyle = '#669208' //'#a6e22e' //'#99ff00'
 
       // let sum = 0
       // for (let i = x*w; i < x*w+w; i += s) {
@@ -107,24 +107,28 @@ const app = window.app = {
       // }
       // let avg = Math.min(1, (sum / (w / s) )) * h
 
-      ctx.moveTo(x, h - (max * h))
-      ctx.lineTo(x, h + (max * h))
+      ctx.moveTo(x/4/2, h - (max * h))
+      ctx.lineTo(x/4/2, h + (max * h))
       ctx.stroke()
     }
     ctx.lineTo(width, h)
     ctx.stroke()
+    ctx.restore()
   },
   animTick () {
     app.animFrame = requestAnimationFrame(app.animTick)
     const ctx = app.waves
     ctx.drawImage(app.waveformsCanvas, 0, 0)
+    ctx.save()
+// ctx.globalCompositeOperation = 'luminosity';
     ctx.beginPath()
-    ctx.lineWidth = 1
+    ctx.lineWidth = window.devicePixelRatio
     const x = ((app.clock.c.time % app.clock.t.bar) / app.clock.t.bar) * waves.width //Math.floor((((performance.now() - app.wavePos)/1000) / app.clock.times.bar) * waves.width)
-    ctx.strokeStyle = '#fff'
+    ctx.strokeStyle = '#889'
     ctx.moveTo(x, 0)
-    ctx.lineTo(x, 200)
+    ctx.lineTo(x, 150)
     ctx.stroke()
+    ctx.restore()
   },
   // animTick () {
   //   app.animFrame = requestAnimationFrame(app.animTick)
@@ -584,6 +588,7 @@ const create = (width, height, withSubs) => {
 waves.width = 170 * window.devicePixelRatio
 waves.height = window.innerHeight * window.devicePixelRatio
 waves.style.height = window.innerHeight + 'px'
+// waves.getContext('2d').scale(window.devicePixelRatio, window.devicePixelRatio)
 
 // document.fonts.ready.then((fontFaceSet) => {
   // console.log(fontFaceSet.size)
@@ -612,7 +617,6 @@ create(window.innerWidth-170, window.innerHeight-30, true)
   // for (let i = 0; i < 40; i++) create(70, 70)
 // });
 // waves.style.width = '170px'
-// waves.getContext('2d').scale(window.devicePixelRatio, window.devicePixelRatio)
 
 const targets = editors.map(editor => ({
   el: editor,
