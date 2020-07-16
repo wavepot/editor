@@ -28,11 +28,12 @@ const app = window.app = {
     app.clock.setBpm(app.bpm)
     app.clock.reset()
     app.clock.start()
-    app.analyser = app.audio.createAnalyser()
-    app.analyser.fftSize = 2 ** 11 // ^5..15
-    app.analyser.connect(app.audio.destination)
+    // app.analyser = app.audio.createAnalyser()
+    // app.analyser.fftSize = 2 ** 13 // ^5..15
+    // app.byteTimeDomainData = new Uint8Array(app.analyser.frequencyBinCount)
+    // app.analyser.connect(app.audio.destination)
     app.gain = app.audio.createGain()
-    app.gain.connect(app.analyser)
+    app.gain.connect(app.audio.destination)
     app.buffer = app.audio.createBuffer(
       1,
       app.clock.lengths.bar,
@@ -42,15 +43,23 @@ const app = window.app = {
     app.source.buffer = app.buffer
     app.source.connect(app.gain)
     app.source.loop = true
+    app.waveformsCanvas = new OffscreenCanvas(waves.width, waves.height)
+    app.waves = waves.getContext('2d')
+    app.waveforms = app.waveformsCanvas.getContext('2d')
+    app.waveforms.scale(window.devicePixelRatio, window.devicePixelRatio)
   },
   resume () {
     app.audio.resume()
+    cancelAnimationFrame(app.animFrame)
+    app.animFrame = requestAnimationFrame(app.animTick)
   },
   suspend () {
     app.audio.suspend()
+    cancelAnimationFrame(app.animFrame)
   },
   onbar () {
-    console.log('bar')
+    app.wavePos = performance.now()
+    // console.log('bar')
   },
   async onchange (editor) {
     console.log('changed', editor)
@@ -65,7 +74,87 @@ const app = window.app = {
     for (const [i, data] of output.entries()) {
       app.buffer.getChannelData(i).set(data)
     }
+    app.drawWaveForm(output[0])
   },
+  drawWaveForm (wave) {
+    const ctx = app.waveforms
+    const width = ctx.canvas.width / window.devicePixelRatio + 1
+    const height = 100
+    ctx.fillStyle = '#000' //'#99ff00'
+    ctx.fillRect(0, 0, width, height)
+    ctx.strokeStyle = '#a6e22e' //'#99ff00'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    const y = height
+    const h = height / 2
+    const s = 32
+    ctx.moveTo(0, h)
+    const w = Math.floor(wave.length / width)
+    for (let x = 0; x < width; x++) {
+      ctx.beginPath()
+      let max = Math.abs(Math.max(...wave.slice(x*w, x*w+w)))
+      if (max > 1) {
+        ctx.strokeStyle = '#ff0000'
+        // ctx.stroke()
+        console.log('max great than 1')
+        max = 1
+      }
+      else ctx.strokeStyle = '#a6e22e' //'#99ff00'
+
+      // let sum = 0
+      // for (let i = x*w; i < x*w+w; i += s) {
+        // sum += Math.abs(wave[i])
+      // }
+      // let avg = Math.min(1, (sum / (w / s) )) * h
+
+      ctx.moveTo(x, h - (max * h))
+      ctx.lineTo(x, h + (max * h))
+      ctx.stroke()
+    }
+    ctx.lineTo(width, h)
+    ctx.stroke()
+  },
+  animTick () {
+    app.animFrame = requestAnimationFrame(app.animTick)
+    const ctx = app.waves
+    ctx.drawImage(app.waveformsCanvas, 0, 0)
+    ctx.beginPath()
+    ctx.lineWidth = 1
+    const x = ((app.clock.c.time % app.clock.t.bar) / app.clock.t.bar) * waves.width //Math.floor((((performance.now() - app.wavePos)/1000) / app.clock.times.bar) * waves.width)
+    ctx.strokeStyle = '#fff'
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, 200)
+    ctx.stroke()
+  },
+  // animTick () {
+  //   app.animFrame = requestAnimationFrame(app.animTick)
+  //   const ctx = app.waves
+  //   app.analyser.getByteTimeDomainData(app.byteTimeDomainData)
+  //   const width = ctx.canvas.width
+  //   const height = 50
+  //   ctx.clearRect(0, 0, width, height * 2)
+  //   ctx.strokeStyle = '#a6e22e' //'#99ff00'
+  //   ctx.lineWidth = 1.2
+  //   ctx.beginPath()
+
+  //   const sliceWidth = width / app.byteTimeDomainData.length / 2
+
+  //   for(let i = 0, x = 0; i < app.byteTimeDomainData.length; i++) {
+
+  //     let v = (app.byteTimeDomainData[i]) / 128.0
+  //     let y = v * height
+
+  //     if (i === 0) {
+  //       ctx.moveTo(x, y)
+  //     } else {
+  //       ctx.lineTo(x, y)
+  //     }
+
+  //     x += sliceWidth
+  //   }
+  //   ctx.lineTo(width, height)
+  //   ctx.stroke()
+  // },
   async saveEditor (editor) {
     const code = editor.value
     const filename = editor.title
@@ -143,17 +232,11 @@ const app = window.app = {
   },
 }
 
-app.start()
-singleGesture(() => {
-  app.resume()
-  app.source.start()
-})
-
 const isWithin = (e, { left, top, right, bottom }) => {
-  left -= container.scrollLeft
-  right -= container.scrollLeft
-  top -= container.scrollTop
-  bottom -= container.scrollTop
+  left -= canvases.scrollLeft
+  right -= canvases.scrollLeft
+  top -= canvases.scrollTop
+  bottom -= canvases.scrollTop
   if ((e.clientX ?? e.pageX) >= left && (e.clientX ?? e.pageX) <= right
   && (e.clientY ?? e.pageY) >= top && (e.clientY ?? e.pageY) <= bottom) {
     return true
@@ -493,10 +576,14 @@ const editors = []
 
 const create = (width, height, withSubs) => {
   const editor = createEditor(width, height)
-  container.appendChild(editor.canvas)
+  canvases.appendChild(editor.canvas)
   editor.setup(withSubs)
   editors.push(editor)
 }
+
+waves.width = 170 * window.devicePixelRatio
+waves.height = window.innerHeight * window.devicePixelRatio
+waves.style.height = window.innerHeight + 'px'
 
 // document.fonts.ready.then((fontFaceSet) => {
   // console.log(fontFaceSet.size)
@@ -508,7 +595,7 @@ const create = (width, height, withSubs) => {
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
-create(window.innerWidth, window.innerHeight-30, true)
+create(window.innerWidth-170, window.innerHeight-30, true)
 // create(window.innerWidth/3, window.innerHeight-30, true)
 // create(window.innerWidth/3, window.innerHeight-30, true)
 // create(window.innerWidth/3, window.innerHeight-30, true)
@@ -524,7 +611,8 @@ create(window.innerWidth, window.innerHeight-30, true)
 // create(window.innerWidth/5, window.innerHeight, true)
   // for (let i = 0; i < 40; i++) create(70, 70)
 // });
-
+// waves.style.width = '170px'
+// waves.getContext('2d').scale(window.devicePixelRatio, window.devicePixelRatio)
 
 const targets = editors.map(editor => ({
   el: editor,
@@ -545,3 +633,9 @@ const hoverTargetHandler = targetHandler('hover')
 window.addEventListener('mousedown', focusTargetHandler, { passive: false })
 window.addEventListener('mousewheel', hoverTargetHandler, { passive: false })
 window.addEventListener('mousemove', hoverTargetHandler, { passive: false })
+
+app.start()
+singleGesture(() => {
+  app.resume()
+  app.source.start(app.clock.sync.bar)
+})
