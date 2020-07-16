@@ -180,7 +180,7 @@ class Editor {
       await this.addSubEditor(new Editor('addSubEditor'))
       await this.addSubEditor(new Editor('insert'))
       await this.addSubEditor(new Editor('moveByChars'))
-      await this.addSubEditor(new Editor('onkeydown'))
+      await this.addSubEditor(new Editor('onmousedown'))
       // this.onfocus()
       this.draw()
     } else {
@@ -228,7 +228,7 @@ class Editor {
 
     this.updateSizes()
     this.updateText()
-    this.keepCaretInView()
+    this.keepCaretInView('ease', false)
     this.draw()
   }
 
@@ -538,19 +538,27 @@ class Editor {
 
   }
 
-  getCaretPxDiff () {
-    const left = this.canvas.gutter.width
-    const top = this.titlebar.height
-    const right = left + (this.view.width - this.scrollbar.width - this.char.px.width)
-    const bottom = top + (this.view.height - this.scrollbar.width - this.char.px.height)
+  getCaretPxDiff (centered = false) {
+    let left = this.canvas.gutter.width
+    let top = this.titlebar.height
+    let right = left + (this.view.width - this.scrollbar.width - this.char.px.width)
+    let bottom = top + (this.view.height - this.scrollbar.width - this.char.px.height)
 
+    if (centered) {
+      left = right / 2
+      right = right / 2
+      top = bottom / 2
+      bottom = bottom / 2
+    }
     // this.controlEditor.ctx.debug.clearRect(0, 0, this.canvas.width, this.canvas.height)
     // this.controlEditor.ctx.debug.fillStyle = 'rgba(255,0,0,.5)'
     // this.controlEditor.ctx.debug.fillRect(left, top, right-left, bottom-top)
     // this.drawSync()
 
-    const x = this.caret.px.x * this.canvas.pixelRatio + this.canvas.gutter.width - this.scroll.pos.x
-    const y = this.caret.px.y * this.canvas.pixelRatio + this.titlebar.height + this.offsetTop - this.scroll.pos.y
+    const editor = this.controlEditor.focusedEditor
+
+    const x = editor.caret.px.x * this.canvas.pixelRatio + this.canvas.gutter.width - editor.scroll.pos.x
+    const y = editor.caret.px.y * this.canvas.pixelRatio + this.titlebar.height + editor.offsetTop - editor.scroll.pos.y
 
     const dx =
       x < left ? left - x
@@ -1179,22 +1187,14 @@ class Editor {
       + editor.titlebar.height
       ) {
         if (eventName === 'onmousedown') {
-          if (this.focusedEditor !== editor) {
-            this.focusedEditor?.onblur()
-            editor.onfocus()
-          }
-          this.focusedEditor = editor
+          this.controlEditor.setFocusedEditor(editor, false)
         }
         editor[eventName](e)
         return true
       }
     }
 
-    if (this.focusedEditor !== this) {
-      this.focusedEditor?.onblur()
-      this.onfocus()
-    }
-    this.focusedEditor = this
+    this.controlEditor.setFocusedEditor(this, false)
 
     return false
   }
@@ -1253,10 +1253,10 @@ class Editor {
     }
   }
 
-  keepCaretInView () {
-    const caretPxDiff = this.getCaretPxDiff()
-    if (caretPxDiff.x !== 0) this.scrollBy({ x: -caretPxDiff.x, y: 0 })
-    if (caretPxDiff.y !== 0) this.controlEditor.scrollBy({ x: 0, y: -caretPxDiff.y })
+  keepCaretInView (animType, centered) {
+    const caretPxDiff = this.getCaretPxDiff(centered)
+    if (caretPxDiff.x !== 0) this.scrollBy({ x: -caretPxDiff.x, y: 0 }, animType)
+    if (caretPxDiff.y !== 0) this.controlEditor.scrollBy({ x: 0, y: -caretPxDiff.y }, animType)
   }
 
   applyCaretDiff (diff, jump = false) {
@@ -1266,7 +1266,6 @@ class Editor {
     if (caretPxDiff.y !== 0) {
       if (jump) {
         this.controlEditor.scrollBy({ x: 0, y: -diffPx.y }, 'ease')
-        setTimeout(() => this.keepCaretInView(), 10)
       } else {
         this.controlEditor.scrollBy({ x: 0, y: -caretPxDiff.y }, 'ease')
       }
@@ -1285,7 +1284,6 @@ class Editor {
 
     if (!e.cmdKey && this.key) return this.insert(this.key)
     if (e.key === 'Enter') return this.insert('\n')
-    if (e.key === 'Tab') return this.insert(' '.repeat(this.tabSize))
     if (!e.cmdKey && e.key === 'Backspace') return this.backspace()
     if (!e.cmdKey && !e.shiftKey && e.key === 'Delete') return this.delete()
 
@@ -1293,61 +1291,50 @@ class Editor {
 
     // navigation
     if (e.shiftKey && e.key !== 'Shift') this.markBegin()
-    else if (e.key !== 'Delete' && !e.cmdKey) this.markClear()
+    else if (e.key !== 'Delete' && !e.cmdKey && e.key !== 'Tab') this.markClear()
 
     switch (this.pressed) {
-      case 'Cmd /': {
+      case 'Tab': {
+        const tab = ' '.repeat(this.tabSize)
 
-        let add;
-        let area;
-        let text;
+        let add
+        let area
+        let text
 
         let prevArea = this.mark.copy()
 
-        let clear = false;
-        let caret = this.caret.pos.copy();
+        let clear = false
+        let caret = this.caret.pos.copy()
         let align = this.caret.align
 
         let matchIndent = false
 
         if (!this.markActive) {
-          clear = true;
-          this.markClear();
-          this.moveBeginOfLine();
-          this.markBegin();
-          this.moveEndOfLine();
-          this.markSet();
-          area = this.mark.get();
-          text = this.buffer.getAreaText(area);
-          matchIndent = text.match(/\S/)?.index < caret.x
+          this.insert(tab)
+          break
         } else {
-          area = this.mark.get();
+          area = this.mark.get()
           area.end.y += area.end.x > 0 ? 1 : 0
           area.begin.x = 0
           area.end.x = 0
-          // area.addBottom(area.end.x > 0 ? 1 : 0).setLeft(0, 0);
-          text = this.buffer.getAreaText(area);
+          text = this.buffer.getAreaText(area)
           matchIndent = true
         }
 
-        //TODO: should check if last line has // also
-        if (text.trimLeft().substr(0,2) === '//') {
-          add = -3;
-          text = text.replace(/^(.*?)\/\/ (.+)/gm, '$1$2');
+        if (e.shiftKey) {
+          add = -2
+          text = text.replace(/^ {1,2}(.+)/gm, '$1') // TODO: use tabSize
         } else {
-          add = +3;
-          text = text.replace(/^([\s]*)(.+)/gm, '$1// $2');
+          add = +2
+          text = text.replace(/^([\s]*)(.+)/gm, `$1${tab}$2`)
         }
 
         this.mark.set(area)
-        this.insert(text);
+        this.insert(text)
         this.mark.set(prevArea)
         this.mark.begin.x += this.mark.begin.x > 0 ? add : 0
         this.mark.end.x += this.mark.end.x > 0 ? add : 0
-        // this.mark.set(prevArea.addRight(add))
-
-        // this.mark.set(area.addRight(add));
-        this.markActive = !clear;
+        this.markActive = !clear
 
         this.caret.align = align
 
@@ -1355,12 +1342,66 @@ class Editor {
           caret.x += add
           this.caret.align += add
         }
-        this.setCaret(caret);
-        // this.keepCaretInView()
+        this.setCaret(caret)
+        this.updateMark()
+        this.draw()
+      }
+      break
+      case 'Cmd /': {
+        let add
+        let area
+        let text
 
-        if (clear) {
-          // this.markClear();
+        let prevArea = this.mark.copy()
+
+        let clear = false
+        let caret = this.caret.pos.copy()
+        let align = this.caret.align
+
+        let matchIndent = false
+
+        if (!this.markActive) {
+          clear = true
+          this.markClear()
+          this.moveBeginOfLine()
+          this.markBegin()
+          this.moveEndOfLine()
+          this.markSet()
+          area = this.mark.get()
+          text = this.buffer.getAreaText(area)
+          matchIndent = text.match(/\S/)?.index < caret.x
+        } else {
+          area = this.mark.get()
+          area.end.y += area.end.x > 0 ? 1 : 0
+          area.begin.x = 0
+          area.end.x = 0
+          text = this.buffer.getAreaText(area)
+          matchIndent = true
         }
+
+        //TODO: should check if last line has // also
+        if (text.trimLeft().substr(0,2) === '//') {
+          add = -3
+          text = text.replace(/^(.*?)\/\/ (.+)/gm, '$1$2')
+        } else {
+          add = +3
+          text = text.replace(/^([\s]*)(.+)/gm, '$1// $2')
+        }
+
+        this.mark.set(area)
+        this.insert(text)
+        this.mark.set(prevArea)
+        this.mark.begin.x += this.mark.begin.x > 0 ? add : 0
+        this.mark.end.x += this.mark.end.x > 0 ? add : 0
+        this.markActive = !clear
+
+        this.caret.align = align
+
+        if (matchIndent) {
+          caret.x += add
+          this.caret.align += add
+        }
+        this.setCaret(caret)
         this.updateMark()
         this.draw()
       }
@@ -1465,32 +1506,6 @@ class Editor {
         }
       break
 
-      case 'Alt PageUp': {
-        let nextEditor
-        if (this.isSubEditor) {
-          const index = this.controlEditor.subEditors.indexOf(this)
-          nextEditor = this.controlEditor.subEditors[index - 1]
-          if (!nextEditor) nextEditor = this.controlEditor
-        } else {
-          nextEditor = this.controlEditor.subEditors[this.controlEditor.subEditors.length - 1]
-        }
-        this.controlEditor.setFocusedEditor(nextEditor)
-      }
-      break
-
-      case 'Alt PageDown': {
-        let nextEditor
-        if (this.isSubEditor) {
-          const index = this.controlEditor.subEditors.indexOf(this)
-          nextEditor = this.controlEditor.subEditors[index + 1]
-          if (!nextEditor) nextEditor = this.controlEditor
-        } else {
-          nextEditor = this.subEditors[0]
-        }
-        this.controlEditor.setFocusedEditor(nextEditor)
-      }
-      break
-
       case 'ArrowLeft':
         this.applyCaretDiff(this.moveByChars(-1))
         if (e.shiftKey) this.markSet()
@@ -1508,13 +1523,34 @@ class Editor {
         if (e.shiftKey) this.markSet()
       break
 
-      case 'PageUp':
+      case 'Alt PageUp':
+        this.controlEditor.moveByEditors(-1)
+      break
+      case 'Alt PageDown':
+        this.controlEditor.moveByEditors(+1)
+      break
+
+      case 'PageUp': {
+        const caretPos = this.caret.pos.copy()
         this.applyCaretDiff(this.moveByLines(-this.page.lines), true)
         if (e.shiftKey) this.markSet()
+        else {
+          if (caretPos.equal(this.caret.pos)) {
+            this.controlEditor.moveByEditors(-1)
+          }
+        }
+      }
       break
-      case 'PageDown':
+      case 'PageDown': {
+        const caretPos = this.caret.pos.copy()
         this.applyCaretDiff(this.moveByLines(+this.page.lines), true)
         if (e.shiftKey) this.markSet()
+        else {
+          if (caretPos.equal(this.caret.pos)) {
+            this.controlEditor.moveByEditors(+1)
+          }
+        }
+      }
       break
 
       case 'Home':
@@ -1528,6 +1564,16 @@ class Editor {
     }
 
     this.draw()
+  }
+
+  moveByEditors (y) {
+    const editors = [this, ...this.subEditors]
+    let index = editors.indexOf(this.focusedEditor)
+    index += y
+    if (index > editors.length - 1) index = 0
+    if (index < 0) index = editors.length - 1
+    const editor = editors[index]
+    this.setFocusedEditor(editor)
   }
 
   onkeyup (e) {
@@ -1558,21 +1604,11 @@ class Editor {
       }
       if (editor) {
         this.setFocusedEditor(editor)
-        // if (target !== this.focusedEditor) {
-        //   this.focusedEditor?.onblur()
-        //   this.focusedEditor = target
-        // }
-        // target.onfocus()
-        // target.updateSizes()
-        // target.updateText()
-        // target.updateMark()
-        // target.keepCaretInView()
-        // target.draw()
       }
     }
   }
 
-  setFocusedEditor (editor) {
+  setFocusedEditor (editor, animType = 'ease', centered = true) {
     if (editor !== this.focusedEditor) {
       this.focusedEditor?.onblur()
       this.focusedEditor = editor
@@ -1581,7 +1617,7 @@ class Editor {
     editor.updateSizes()
     editor.updateText()
     editor.updateMark()
-    editor.keepCaretInView()
+    if (animType !== false) editor.keepCaretInView(animType, centered)
     editor.draw()
   }
 
