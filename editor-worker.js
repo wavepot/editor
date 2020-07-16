@@ -40,7 +40,7 @@ const WORDS = Regexp.create(['words'], 'g')
 class Editor {
   constructor (title, id) {
     this.id = id ?? (Math.random() * 10e6 | 0).toString(36)
-    this.title = title
+    this.title = title ?? 'untitled'
     this.pos = new Point
     this.scroll = { pos: new Point, target: new Point }
     this.offsetTop = 0
@@ -172,36 +172,37 @@ class Editor {
           needle: this.history.needle
         })
       })
-      this.history.on('actual save', () => {
+      this.history.on('change', editor => {
         postMessage({
           call: 'onchange',
-          ...this.history.editor.toJSON()
+          ...editor.toJSON()
         })
       })
     }
 
-    this.title = this.title || 'drawText'
+    // this.title = this.title || 'drawText'
     // this.setText('')
     // this.setText('/*""*/\n//hello\nfoo(\'hello\').indexOf(\'\\t\') // foo\nhi"hello"\n// yo')
-    this.setText(this[this.title].toString()) //getPointTabs.toString()) // + this.setup.toString())
+    // this.setText(this[this.title].toString()) //getPointTabs.toString()) // + this.setup.toString())
     this.moveCaret({ x: 0, y: 0 })
-    this.mark.set({ begin: { x: 5, y: 6 }, end: { x: 5, y: 10 }})
+    // this.mark.set({ begin: { x: 5, y: 6 }, end: { x: 5, y: 10 }})
     this.markActive = true
     this.updateMark()
+    this.draw()
     // setTimeout(() => this.scrollBy(0, -6400), 10)
     // setTimeout(() => this.scrollBy(0, -27400), 10)
-    if (!this.isSubEditor && data.withSubs) {
-      // const second = new Editor()
-      await this.addSubEditor(new Editor('erase'))
-      await this.addSubEditor(new Editor('addSubEditor'))
-      await this.addSubEditor(new Editor('insert'))
-      await this.addSubEditor(new Editor('moveByChars'))
-      await this.addSubEditor(new Editor('onmousedown'))
-      // this.onfocus()
-      this.draw()
-    } else {
-      this.draw()
-    }
+    // if (!this.isSubEditor && data.withSubs) {
+    //   // const second = new Editor()
+    //   await this.addSubEditor(new Editor('erase'))
+    //   await this.addSubEditor(new Editor('addSubEditor'))
+    //   await this.addSubEditor(new Editor('insert'))
+    //   await this.addSubEditor(new Editor('moveByChars'))
+    //   await this.addSubEditor(new Editor('onmousedown'))
+    //   // this.onfocus()
+    //   this.draw()
+    // } else {
+    //   this.draw()
+    // }
   }
 
   async addSubEditor (editor) {
@@ -218,6 +219,16 @@ class Editor {
     this.updateSizes(true)
     this.updateText()
     // this.draw()
+  }
+
+  setFile (file) {
+    this.id = file.id
+    this.title = file.title
+    this.setText(file.value)
+    postMessage({
+      call: 'onchange',
+      ...this.toJSON()
+    })
   }
 
   erase (moveByChars = 0) {

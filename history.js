@@ -42,7 +42,7 @@ History.prototype.actuallySave = function (noEmit) {
     this.saveMeta()
     if (!noEmit) {
       this.emit('save')
-      this.emit('actual save')
+      this.emit('change', this.editor)
     }
   } else {
     this.saveMeta()
@@ -106,7 +106,7 @@ History.prototype.checkout = function (type, n) {
     }
   })
 
-  this.emit('change')
+  this.emit('change', commit.editor)
 
   return commit.editor
 }

@@ -1,3 +1,154 @@
+import Clock from './clock.js'
+import Context from './dsp-context.js'
+import SharedBuffer from './shared-buffer.js'
+import singleGesture from './lib/single-gesture.js'
+import readMethods from './read-methods.js'
+import DynamicCache from './dynamic-cache.js'
+
+DynamicCache.install()
+
+const app = window.app = {
+  bpm: 140,
+  scripts: [],
+  cache: new DynamicCache('wavepot', { 'Content-Type': 'application/javascript' }),
+  start () {
+    if (app.audio) return
+    app.audio =
+    app.context =
+    app.audioContext = new AudioContext({
+      numberOfChannels: 2,
+      sampleRate: 44100
+    })
+    app.audio.onstatechange = e => {
+      console.log('audio context state change:', app.audio.state)
+    }
+    app.audio.destination.addEventListener('bar', app.onbar)
+    app.clock = new Clock
+    app.clock.connect(app.audio.destination)
+    app.clock.setBpm(app.bpm)
+    app.clock.reset()
+    app.clock.start()
+    app.analyser = app.audio.createAnalyser()
+    app.analyser.fftSize = 2 ** 11 // ^5..15
+    app.analyser.connect(app.audio.destination)
+    app.gain = app.audio.createGain()
+    app.gain.connect(app.analyser)
+    app.buffer = app.audio.createBuffer(
+      1,
+      app.clock.lengths.bar,
+      app.audio.sampleRate
+    )
+    app.source = app.audio.createBufferSource()
+    app.source.buffer = app.buffer
+    app.source.connect(app.gain)
+    app.source.loop = true
+  },
+  resume () {
+    app.audio.resume()
+  },
+  suspend () {
+    app.audio.suspend()
+  },
+  onbar () {
+    console.log('bar')
+  },
+  async onchange (editor) {
+    console.log('changed', editor)
+    const filename = await app.saveEditor(editor)
+    const methods = await readMethods(filename)
+    const output = await app.renderEditor({
+      filename,
+      method: methods.default,
+      bars: 1,
+      channels: 1
+    })
+    for (const [i, data] of output.entries()) {
+      app.buffer.getChannelData(i).set(data)
+    }
+  },
+  async saveEditor (editor) {
+    const code = editor.value
+    const filename = editor.title
+    return await app.cache.put(editor.control + '/' + filename, code)
+  },
+  async renderEditor (editor, bar = 0) {
+    const worker = new Worker('./dsp-worker.js', { type: 'module' })
+
+    worker.onerror = e => console.error(e)
+    worker.onmessage = ({ data }) => app[data.call](worker, data)
+
+    const ctx = worker.context = new Context({
+      filename: editor.filename,
+      method: editor.method,
+      bars: editor.bars,
+      channels: editor.channels,
+      // _canvas: this.offscreenCanvas,
+      length: app.clock.lengths.bar,
+      lengths: app.clock.lengths,
+      totalLength: app.clock.lengths.bar * editor.bars,
+      sampleRate: app.audioContext.sampleRate
+    })
+
+    const sharedBuffer = new SharedBuffer(
+      worker.context.channels,
+      worker.context.length
+    )
+
+    worker.context.n = bar * length
+    // worker.context._input = input
+    worker.context.output = sharedBuffer.output
+
+    await app.setup(worker)
+    return app.render(worker)
+  },
+  render (worker) {
+    return new Promise(resolve => {
+      worker.renderResolve = output => {
+        // if (input && !worker.context.inputAccessed) {
+        //   for (let c = 0; c < Math.max(input.length, output.length); c++) {
+        //     const channelIn = input[c % input.length]
+        //     const channelOut = output[c % output.length]
+        //     for (let i = 0; i < channelIn.length; i++) {
+        //       channelOut[i] += channelIn[i]
+        //     }
+        //   }
+        // }
+        resolve(output)
+        // worker.context._input = null
+        worker.context.output = null
+      }
+      worker.postMessage({ call: 'render', context: worker.context })
+    })
+  },
+  setup (worker) {
+    worker.postMessage({ call: 'setup', context: worker.context })
+    //, [this.offscreenCanvas])
+    return new Promise((resolve, reject) => {
+      worker.setupTimeout = setTimeout(() => {
+        console.error('Worker setup timeout')
+        console.dir(worker.context)
+        reject()
+      }, 10000)
+      worker.setupResolve = resolve
+    })
+  },
+  onsetup (worker, { context }) {
+    clearTimeout(worker.setupTimeout)
+    worker.context.put(context)
+    worker.setupResolve()
+  },
+  onrender (worker, e) {
+    worker.context.put(e.context)
+    worker.renderResolve(e.context.output)
+  },
+}
+
+app.start()
+singleGesture(() => {
+  app.resume()
+  app.source.start()
+})
+
 const isWithin = (e, { left, top, right, bottom }) => {
   left -= container.scrollLeft
   right -= container.scrollLeft
@@ -14,6 +165,15 @@ const createEventsHandler = parent => {
 
   const handlerMapper = (target, type) => eventName => {
     const handler = e => {
+      if (type === 'key') {
+        if (eventName === 'onkeydown') {
+          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            return app.audio.state === 'running'
+              ? app.suspend()
+              : app.resume()
+          }
+        }
+      }
       if (type === 'mouse') {
         if (eventName === 'onmouseup') targets.forceWithin = null
         if (eventName === 'onmousedown') targets.forceWithin = targets.hover
@@ -180,7 +340,7 @@ const createEditor = (width, height) => {
       onready() // TODO: don't use an ugly hack
     },
     onchange (e) {
-      console.log('changed:', e)
+      app.onchange(e)
     },
     onhistory ({ length, needle }) {
       const lastNeedle = history.needle
@@ -314,6 +474,14 @@ const createEditor = (width, height) => {
         const pos = canvas.getBoundingClientRect().toJSON()
         const outerCanvas = canvas.transferControlToOffscreen()
         worker.postMessage({ call: 'setup', pos, outerCanvas, pixelRatio, withSubs }, [outerCanvas])
+        fetch('./demo.js').then(res => res.text()).then(text => {
+          worker.postMessage({
+            call: 'setFile',
+            id: 'demo',
+            title: 'demo',
+            value: text
+          })
+        })
       }
     }
   }
@@ -340,11 +508,11 @@ const create = (width, height, withSubs) => {
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
-create(window.innerWidth/3, window.innerHeight-30, true)
-create(window.innerWidth/3, window.innerHeight-30, true)
-create(window.innerWidth/3, window.innerHeight-30, true)
-create(window.innerWidth/3, window.innerHeight-30, true)
-create(window.innerWidth/3, window.innerHeight-30, true)
+create(window.innerWidth, window.innerHeight-30, true)
+// create(window.innerWidth/3, window.innerHeight-30, true)
+// create(window.innerWidth/3, window.innerHeight-30, true)
+// create(window.innerWidth/3, window.innerHeight-30, true)
+// create(window.innerWidth/3, window.innerHeight-30, true)
 // create(window.innerWidth/4, window.innerHeight-30, true)
 // create(window.innerWidth/4, window.innerHeight-30, true)
 // create(window.innerWidth/4, window.innerHeight-30, true)
