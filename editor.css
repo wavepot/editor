@@ -1,9 +1,38 @@
+/* width */
+::-webkit-scrollbar {
+  height: 30px;
+  cursor: pointer !important;
+}
+
+/* Track */
+::-webkit-scrollbar-track:hover {
+}
+::-webkit-scrollbar-track {
+  background: #333;
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+  background: #555;
+}
+
+/* Handle on hover */
+::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
 html, body {
   margin: 0;
   padding: 0;
   overflow: hidden;
+  background: #1a1a1a;
 }
 
+#container {
+  display: flex;
+  flex-flow: row nowrap;
+  overflow-x: scroll;
+}
 /** {
   font-family: 'Space Mono'; /*Liberation Mono';*/
 /*  font-variant-ligatures: none;
@@ -13,5 +42,5 @@ html, body {
 }
 */
 .editor {
-  display: inline-block;
+  display: flex;
 }

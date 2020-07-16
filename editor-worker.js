@@ -164,7 +164,7 @@ class Editor {
       })
     }
 
-    this.title = this.title || 'onkeydown'
+    this.title = this.title || 'drawText'
     // this.setText('')
     // this.setText('/*""*/\n//hello\nfoo(\'hello\').indexOf(\'\\t\') // foo\nhi"hello"\n// yo')
     this.setText(this[this.title].toString()) //getPointTabs.toString()) // + this.setup.toString())
@@ -1057,7 +1057,7 @@ class Editor {
       this.drawTitle()
     }
     if (this.markActive) this.drawMark()
-    if (this.controlEditor.focusedEditor === this) this.drawCaret()
+    if (this.controlEditor.focusedEditor === this && this.hasFocus) this.drawCaret()
     this.subEditors.forEach(editor => editor.isVisible && editor.drawTitle())
     if (!this.isSubEditor) this.drawVertScrollbar()
     this.drawText()
@@ -1218,7 +1218,7 @@ class Editor {
     let { deltaX, deltaY } = e
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
       if (!this.maybeDelegateMouseEvent('onmousewheel', e)) {
-        deltaX *= 320
+        deltaX *= 700
         this.scrollBy({ x: deltaX, y: 0 }, 'linear')
       }
     } else {
@@ -1622,15 +1622,15 @@ class Editor {
   }
 
   onblur () {
-    this.hasFocus = false
-    this.keys.clear()
-    this.draw()
+    this.controlEditor.focusedEditor.hasFocus = false
+    this.controlEditor.focusedEditor.keys.clear()
+    this.controlEditor.draw()
   }
 
   onfocus () {
-    this.hasFocus = true
-    this.keys.clear()
-    this.draw()
+    this.controlEditor.focusedEditor.hasFocus = true
+    this.controlEditor.focusedEditor.keys.clear()
+    this.controlEditor.draw()
   }
 
   onresize () {

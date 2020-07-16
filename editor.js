@@ -1,4 +1,8 @@
 const isWithin = (e, { left, top, right, bottom }) => {
+  left -= container.scrollLeft
+  right -= container.scrollLeft
+  top -= container.scrollTop
+  bottom -= container.scrollTop
   if ((e.clientX ?? e.pageX) >= left && (e.clientX ?? e.pageX) <= right
   && (e.clientY ?? e.pageY) >= top && (e.clientY ?? e.pageY) <= bottom) {
     return true
@@ -173,7 +177,7 @@ const createEditor = (width, height) => {
 
   const methods = {
     onready () {
-      onready()
+      onready() // TODO: don't use an ugly hack
     },
     onhistory ({ length, needle }) {
       const lastNeedle = history.needle
@@ -318,7 +322,7 @@ const editors = []
 
 const create = (width, height, withSubs) => {
   const editor = createEditor(width, height)
-  document.body.appendChild(editor.canvas)
+  container.appendChild(editor.canvas)
   editor.setup(withSubs)
   editors.push(editor)
 }
@@ -333,7 +337,20 @@ const create = (width, height, withSubs) => {
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
-create(window.innerWidth, window.innerHeight, true)
+create(window.innerWidth/3, window.innerHeight-30, true)
+create(window.innerWidth/3, window.innerHeight-30, true)
+create(window.innerWidth/3, window.innerHeight-30, true)
+create(window.innerWidth/3, window.innerHeight-30, true)
+create(window.innerWidth/3, window.innerHeight-30, true)
+// create(window.innerWidth/4, window.innerHeight-30, true)
+// create(window.innerWidth/4, window.innerHeight-30, true)
+// create(window.innerWidth/4, window.innerHeight-30, true)
+// create(window.innerWidth/4, window.innerHeight-30, true)
+// create(window.innerWidth/4, window.innerHeight-30, true)
+// create(window.innerWidth/4, window.innerHeight-30, true)
+// create(window.innerWidth/5, window.innerHeight, true)
+// create(window.innerWidth/5, window.innerHeight, true)
+// create(window.innerWidth/5, window.innerHeight, true)
   // for (let i = 0; i < 40; i++) create(70, 70)
 // });
 
