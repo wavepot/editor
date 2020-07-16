@@ -40,7 +40,10 @@ History.prototype.actuallySave = function (noEmit) {
 
     this.needle = ++this.lastNeedle
     this.saveMeta()
-    if (!noEmit) this.emit('save')
+    if (!noEmit) {
+      this.emit('save')
+      this.emit('actual save')
+    }
   } else {
     this.saveMeta()
   }

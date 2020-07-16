@@ -179,6 +179,9 @@ const createEditor = (width, height) => {
     onready () {
       onready() // TODO: don't use an ugly hack
     },
+    onchange (e) {
+      console.log('changed:', e)
+    },
     onhistory ({ length, needle }) {
       const lastNeedle = history.needle
       history.length = length

@@ -38,7 +38,8 @@ const NEWLINE = Regexp.create(['newline'])
 const WORDS = Regexp.create(['words'], 'g')
 
 class Editor {
-  constructor (title) {
+  constructor (title, id) {
+    this.id = id ?? (Math.random() * 10e6 | 0).toString(36)
     this.title = title
     this.pos = new Point
     this.scroll = { pos: new Point, target: new Point }
@@ -54,6 +55,15 @@ class Editor {
     this.scrollAnim.scale = { tiny: .296, near: .42, mid: .815, far: 2.85 }
     this.animScrollStart = this.animScrollStart.bind(this)
     this.animScrollTick = this.animScrollTick.bind(this)
+  }
+
+  toJSON () {
+    return {
+      id: this.id,
+      control: this.controlEditor.id,
+      title: this.title,
+      value: this.buffer.toString()
+    }
   }
 
   async setup (data, controlEditor) {
@@ -160,6 +170,12 @@ class Editor {
           call: 'onhistory',
           length: this.history.log.length,
           needle: this.history.needle
+        })
+      })
+      this.history.on('actual save', () => {
+        postMessage({
+          call: 'onchange',
+          ...this.history.editor.toJSON()
         })
       })
     }
