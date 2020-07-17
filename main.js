@@ -40,7 +40,7 @@ const app = window.app = {
     // app.byteTimeDomainData = new Uint8Array(app.analyser.frequencyBinCount)
     // app.analyser.connect(app.audio.destination)
     app.gain = app.audio.createGain()
-    app.gain.connect(app.audio.destination)
+    // app.gain.connect(app.audio.destination)
     app.buffer = app.audio.createBuffer(
       1,
       app.clock.lengths.bar,
@@ -628,6 +628,7 @@ const createEditor = async (data = {}) => {
       for (const editor of Object.values(app.controlEditors)) {
         editor.canvas.style.width = app.editorWidth + 'px'
         editor.canvas.style.height = app.editorHeight + 'px'
+        Object.assign(editor, editor.canvas.getBoundingClientRect().toJSON())
       }
       return {
         width: app.editorWidth * window.devicePixelRatio,

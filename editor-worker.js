@@ -713,6 +713,9 @@ class Editor {
     if (loc !== this.sizes.loc || force) {
       changed = true
       this.sizes.loc = loc
+      this.view.height = this.canvas.height
+      this.scrollbar.view.height = this.canvas.height - this.titlebar.height
+
       this.gutter.size = (1 + this.sizes.loc).toString().length
       this.gutter.width = this.gutter.size * this.char.width + this.gutter.padding
 
@@ -744,7 +747,6 @@ class Editor {
 
       this.view.left = this.canvas.gutter.width
       this.view.width = this.canvas.width - this.canvas.gutter.width
-      this.view.height = this.canvas.height
 
       this.padding.width = (
         this.gutter.width
@@ -1700,7 +1702,6 @@ class Editor {
   }
 
   onresize ({ width, height }) {
-    console.log('resize', width, height)
     this.canvas.width = this.canvas.outer.width = width
     this.canvas.height = this.canvas.outer.height = height
     this.updateSizes(true)
