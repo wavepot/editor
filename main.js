@@ -9,7 +9,7 @@ DynamicCache.install()
 
 const app = window.app = {
   bpm: 140,
-  scripts: [],
+  scripts: {},
   cache: new DynamicCache('wavepot', { 'Content-Type': 'application/javascript' }),
   start () {
     if (app.audio) return
@@ -58,33 +58,19 @@ const app = window.app = {
     cancelAnimationFrame(app.animFrame)
   },
   onbar () {
-    app.wavePos = performance.now()
     // console.log('bar')
-  },
-  async onchange (editor) {
-    console.log('changed', editor)
-    const filename = await app.saveEditor(editor)
-    const methods = await readMethods(filename)
-    const output = await app.renderEditor({
-      filename,
-      method: methods.default,
-      bars: 1,
-      channels: 1
-    })
-    for (const [i, data] of output.entries()) {
-      app.buffer.getChannelData(i).set(data)
-    }
-    app.drawWaveForm(output[0])
   },
   drawWaveForm (wave) {
     const ctx = app.waveforms
-    const width = ctx.canvas.width*4 // window.devicePixelRatio + 1
+    const width = ctx.canvas.width*2 // window.devicePixelRatio + 1
     const height = 75
     ctx.save()
     ctx.fillStyle = '#000' //'#99ff00'
     ctx.fillRect(0, 0, width, height)
     // ctx.strokeStyle = '#a6e22e' //'#568208' //'#99ff00'
-    ctx.lineWidth = .28
+    const color = 'rgba(215,255,105,0.46)'
+    const peak = '#f31'
+    ctx.lineWidth = .5
     ctx.globalCompositeOperation = 'lighter'
     ctx.beginPath()
     const y = height
@@ -96,10 +82,10 @@ const app = window.app = {
       ctx.beginPath()
       let max = Math.abs(Math.max(...wave.slice(x*w, x*w+w)))
       if (max > 1) {
-        ctx.strokeStyle = '#ff0000'
+        ctx.strokeStyle = peak
         max = 1
       }
-      else ctx.strokeStyle = '#669208' //'#a6e22e' //'#99ff00'
+      else ctx.strokeStyle = color
 
       // let sum = 0
       // for (let i = x*w; i < x*w+w; i += s) {
@@ -107,8 +93,8 @@ const app = window.app = {
       // }
       // let avg = Math.min(1, (sum / (w / s) )) * h
 
-      ctx.moveTo(x/4/2, h - (max * h))
-      ctx.lineTo(x/4/2, h + (max * h))
+      ctx.moveTo(x/2/2, h - (max * h))
+      ctx.lineTo(x/2/2, h + (max * h))
       ctx.stroke()
     }
     ctx.lineTo(width, h)
@@ -120,11 +106,10 @@ const app = window.app = {
     const ctx = app.waves
     ctx.drawImage(app.waveformsCanvas, 0, 0)
     ctx.save()
-// ctx.globalCompositeOperation = 'luminosity';
     ctx.beginPath()
     ctx.lineWidth = window.devicePixelRatio
-    const x = ((app.clock.c.time % app.clock.t.bar) / app.clock.t.bar) * waves.width //Math.floor((((performance.now() - app.wavePos)/1000) / app.clock.times.bar) * waves.width)
-    ctx.strokeStyle = '#889'
+    const x = ((app.clock.c.time % app.clock.t.bar) / app.clock.t.bar) * waves.width
+    ctx.strokeStyle = '#a2a2b2'
     ctx.moveTo(x, 0)
     ctx.lineTo(x, 150)
     ctx.stroke()
@@ -159,6 +144,30 @@ const app = window.app = {
   //   ctx.lineTo(width, height)
   //   ctx.stroke()
   // },
+  async onchange (editor) {
+    console.log('changed', editor)
+    const filename = await app.saveEditor(editor)
+    const methods = await readMethods(filename)
+    editor = {
+      ...editor,
+      filename,
+      method: methods.default,
+      bars: 1,
+      channels: 1
+    }
+    const worker = await app.renderEditor(editor)
+    const { output } = worker.context
+    for (const [i, data] of output.entries()) {
+      app.buffer.getChannelData(i).set(data)
+    }
+    console.log(editor.title, ': render complete')
+    if (app.scripts[editor.id].worker) {
+      console.log(editor.title, ': terminate previous worker')
+      app.scripts[editor.id].worker.terminate()
+    }
+    app.scripts[editor.id].worker = worker
+    app.drawWaveForm(output[0])
+  },
   async saveEditor (editor) {
     const code = editor.value
     const filename = editor.title
@@ -182,17 +191,25 @@ const app = window.app = {
       sampleRate: app.audioContext.sampleRate
     })
 
-    const sharedBuffer = new SharedBuffer(
-      worker.context.channels,
-      worker.context.length
-    )
-
-    worker.context.n = bar * length
-    // worker.context._input = input
-    worker.context.output = sharedBuffer.output
+    const script = app.scripts[editor.id]
+    if (script && script.editor.channels === editor.channels) {
+      worker.context.n = script.worker.context.n
+      worker.context.output = script.worker.context.output
+    } else {
+      app.scripts[editor.id] = { editor }
+      const sharedBuffer = new SharedBuffer(
+        worker.context.channels,
+        worker.context.length
+      )
+      worker.context.n = bar * length
+      // worker.context._input = input
+      worker.context.output = sharedBuffer.output
+      console.log('here')
+    }
 
     await app.setup(worker)
-    return app.render(worker)
+    await app.render(worker)
+    return worker
   },
   render (worker) {
     return new Promise(resolve => {
@@ -208,7 +225,6 @@ const app = window.app = {
         // }
         resolve(output)
         // worker.context._input = null
-        worker.context.output = null
       }
       worker.postMessage({ call: 'render', context: worker.context })
     })
