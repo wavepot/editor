@@ -13,6 +13,25 @@ export default function History(editor) {
 
 History.prototype.__proto__ = Event.prototype
 
+History.prototype.toJSON = function () {
+  return {
+    log: this.log.map(commit => (commit ? {
+      ...commit,
+      editor: commit.editor.id,
+      undo: {
+        ...commit.undo,
+        editor: commit.undo.editor.id
+      },
+      redo: {
+        ...commit.redo,
+        editor: commit.redo.editor.id
+      }
+    } : commit)),
+    needle: this.needle,
+    lastNeedle: this.lastNeedle
+  }
+}
+//
 History.prototype.setEditor = function (editor) {
   if (this.editor !== editor) {
     this.actuallySave(true)
@@ -74,7 +93,6 @@ History.prototype.checkout = function (type, n) {
   if (!commit) return
 
   let log = commit.log
-
   commit = this.log[n][type]
   commit.editor.markActive = commit.markActive
   commit.editor.mark.set(commit.mark.copy())

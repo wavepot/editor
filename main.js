@@ -1,4 +1,5 @@
 import Clock from './clock.js'
+import Storage from './storage.js'
 import Context from './dsp-context.js'
 import SharedBuffer from './shared-buffer.js'
 import singleGesture from './lib/single-gesture.js'
@@ -10,6 +11,12 @@ DynamicCache.install()
 const app = window.app = {
   bpm: 140,
   scripts: {},
+  editors: {},
+  targets: {},
+  controlEditors: {},
+  editorWidth: window.innerWidth - 170,
+  editorHeight: window.innerHeight - 30,
+  storage: new Storage,
   cache: new DynamicCache('wavepot', { 'Content-Type': 'application/javascript' }),
   start () {
     if (app.audio) return
@@ -146,8 +153,12 @@ const app = window.app = {
   // },
   async onchange (editor) {
     console.log('changed', editor)
+    await app.storeEditor(editor)
     const filename = await app.saveEditor(editor)
     const methods = await readMethods(filename)
+    if (!methods.default) {
+      throw new Error('Render Error: no `export default` found')
+    }
     editor = {
       ...editor,
       filename,
@@ -167,11 +178,6 @@ const app = window.app = {
     }
     app.scripts[editor.id].worker = worker
     app.drawWaveForm(output[0])
-  },
-  async saveEditor (editor) {
-    const code = editor.value
-    const filename = editor.title
-    return await app.cache.put(editor.control + '/' + filename, code)
   },
   async renderEditor (editor, bar = 0) {
     const worker = new Worker('./dsp-worker.js', { type: 'module' })
@@ -204,7 +210,6 @@ const app = window.app = {
       worker.context.n = bar * length
       // worker.context._input = input
       worker.context.output = sharedBuffer.output
-      console.log('here')
     }
 
     await app.setup(worker)
@@ -250,6 +255,69 @@ const app = window.app = {
     worker.context.put(e.context)
     worker.renderResolve(e.context.output)
   },
+  async saveEditor (editor) {
+    app.editors[editor.id] = editor
+    return await app.cache.put(editor.controlEditor.title + '/' + editor.title, editor.value)
+  },
+  async storeEditor (editor) {
+    app.editors[editor.id] = editor
+    await app.storage.setItem('editor_' + editor.id, JSON.stringify({
+      id: editor.id,
+      title: editor.title,
+      value: editor.value,
+      controlEditor: {
+        id: editor.controlEditor.id,
+        title: editor.controlEditor.title
+      }
+    }))
+    await app.storage.setItem('editors', JSON.stringify(Object.keys(app.editors)))
+  },
+  async restoreState () {
+    // restore all editors
+    const editors = JSON.parse(await app.storage.getItem('editors'))
+    for (const id of editors.values()) {
+      const editor = JSON.parse(await app.storage.getItem('editor_' + id))
+      app.editors[id] = editor
+      await app.saveEditor(editor)
+    }
+
+    // restore control editors
+    const controlEditors = app.controlEditors = {}
+    for (const editor of Object.values(app.editors)) {
+      if (!(editor.controlEditor.id in controlEditors)) {
+        controlEditors[editor.controlEditor.id] = await createEditor(app.editors[editor.controlEditor.id])
+      }
+    }
+    // restore subeditors
+    for (const editor of Object.values(app.editors)) {
+      if (editor.id !== editor.controlEditor.id) {
+        controlEditors[editor.controlEditor.id].worker.postMessage({
+          call: 'addSubEditor',
+          ...app.editors[editor.id]
+        })
+      }
+    }
+
+    // restore history
+    for (const id in controlEditors) {
+      const history = JSON.parse(await app.storage.getItem('history_' + id))
+      if (!history) continue
+      controlEditors[id].worker.postMessage({
+        call: 'restoreHistory',
+        ...history
+      })
+      controlEditors[id].undoCurrentHistory()
+      Object.assign(controlEditors[id].history, history)
+      controlEditors[id].updateHistory()
+    }
+
+    for (const id in controlEditors) {
+      app.onchange(controlEditors[id])
+    }
+  },
+  async storeHistory (controlEditor, history) {
+    await app.storage.setItem('history_' + controlEditor.id, JSON.stringify(history))
+  },
 }
 
 const isWithin = (e, { left, top, right, bottom }) => {
@@ -281,13 +349,13 @@ const createEventsHandler = parent => {
         if (eventName === 'onmouseup') targets.forceWithin = null
         if (eventName === 'onmousedown') targets.forceWithin = targets.hover
         if (targets.forceWithin) {
-          return targets.forceWithin.el.handleEvent(type, eventName, e)
+          return targets.forceWithin.handleEvent(type, eventName, e)
         }
         if (targets.hover && isWithin(e, targets.hover)) {
-          return targets.hover.el.handleEvent(type, eventName, e)
+          return targets.hover.handleEvent(type, eventName, e)
         }
       } else if (targets.focus) {
-        return targets.focus.el.handleEvent(type, eventName, e)
+        return targets.focus.handleEvent(type, eventName, e)
       }
     }
     target.addEventListener(
@@ -324,14 +392,14 @@ const createEventsHandler = parent => {
       if (previous !== target) {
         const focus = type === 'focus'
         if (previous) {
-          previous.el.handleEvent(
+          previous.handleEvent(
             focus ? 'window' : 'mouse',
             focus ? 'onblur' : 'onmouseout',
             e
           )
         }
         if (target) {
-          target.el.handleEvent(
+          target.handleEvent(
             focus ? 'window' : 'mouse',
             focus ? 'onfocus' : 'onmouseenter',
             e
@@ -353,11 +421,14 @@ const createEventsHandler = parent => {
   }
 }
 
-const createEditor = (width, height) => {
+const createEditor = async (data = {}) => {
+  data.id = data.id ?? (Math.random() * 10e6 | 0).toString(36)
+  data.title = data.title ?? 'untitled'
+  data.value = data.value ?? ''
   let onready
   let textarea
   let selectionText = ''
-  let history = { length: 1, needle: 1 }
+  let history = { log: [null], needle: 1, lastNeedle: 1 }
   let ignore = true
 
   const createTextArea = e => {
@@ -408,6 +479,7 @@ const createEditor = (width, height) => {
           textarea.selectionStart = -1
           textarea.selectionEnd = -1
           worker.postMessage({ call: 'onhistory', needle })
+          app.storeHistory(controlEditor, history)
         } else {
           document.execCommand('redo', false)
         }
@@ -430,29 +502,46 @@ const createEditor = (width, height) => {
 
   const canvas = document.createElement('canvas')
   const pixelRatio = window.devicePixelRatio
-  canvas.width = width * pixelRatio
-  canvas.height = height * pixelRatio
-  canvas.style.width = `${width}px`
-  canvas.style.height = `${height}px`
+  canvas.width = app.editorWidth * pixelRatio
+  canvas.height = app.editorHeight * pixelRatio
+  canvas.style.width = `${app.editorWidth}px`
+  canvas.style.height = `${app.editorHeight}px`
+  canvases.appendChild(canvas)
 
   const worker = new Worker('./editor-worker.js', { type: 'module' })
   worker.onerror = e => console.error(e)
 
+  let resolveReady
+
   const methods = {
     onready () {
-      onready() // TODO: don't use an ugly hack
+      const pos = canvas.getBoundingClientRect().toJSON()
+      const outerCanvas = canvas.transferControlToOffscreen()
+      worker.postMessage({
+        call: 'setup',
+        ...data,
+        pos,
+        outerCanvas,
+        pixelRatio
+      }, [outerCanvas])
+      resolveReady()
     },
     onchange (e) {
       app.onchange(e)
     },
-    onhistory ({ length, needle }) {
+    onhistory (_history) {
       const lastNeedle = history.needle
-      history.length = length
-      history.needle = needle
-      if (textarea && needle !== lastNeedle) {
+
+      history.log = _history.log
+      history.needle = _history.needle
+      history.lastNeedle = _history.lastNeedle
+
+      if (textarea && _history.needle !== lastNeedle) {
         textarea.select()
-        document.execCommand('insertText', false, needle)
+        document.execCommand('insertText', false, _history.needle)
       }
+
+      app.storeHistory(controlEditor, history)
     },
     onselection ({ text }) {
       if (textarea) {
@@ -487,28 +576,45 @@ const createEditor = (width, height) => {
   }
   const eventHandlers = {}
   const handleEvent = (type, eventName, e) => eventHandlers[type](eventName, e)
-  eventHandlers.window = eventMapper((e, eventName) => {
-    if (eventName === 'onfocus') {
-      removeTextArea()
-      createTextArea(e)
+
+  const updateHistory = () => {
+    if (textarea) {
       textarea.focus()
       ignore = true
-      for (var i = 1; i <= history.length; i++) {
+      for (var i = 1; i <= history.log.length; i++) {
         textarea.select()
         document.execCommand('insertText', false, i)
       }
-      for (var i = history.needle; i < history.length; i++) {
+      for (var i = history.needle; i < history.log.length; i++) {
         document.execCommand('undo', false)
       }
       ignore = false
       textarea.selectionStart = -1
       textarea.selectionEnd = -1
     }
-    if (eventName === 'onblur') {
+  }
+
+  const undoCurrentHistory = () => {
+    if (textarea) {
       ignore = true
+      textarea.focus()
       for (var i = 1; i <= history.needle; i++) {
         document.execCommand('undo', false)
       }
+      ignore = false
+      textarea.selectionStart = -1
+      textarea.selectionEnd = -1
+    }
+  }
+
+  eventHandlers.window = eventMapper((e, eventName) => {
+    if (eventName === 'onfocus') {
+      removeTextArea()
+      createTextArea(e)
+      updateHistory()
+    }
+    if (eventName === 'onblur') {
+      undoCurrentHistory()
       removeTextArea()
     }
     return {/* todo */}
@@ -568,38 +674,34 @@ const createEditor = (width, height) => {
       cmdKey
     }
   })
-  return {
+
+  const controlEditor = {
+    ...data,
     canvas,
     worker,
+    history,
     handleEvent,
-    setup (withSubs = false) {
-      onready = () => {
-        const pos = canvas.getBoundingClientRect().toJSON()
-        const outerCanvas = canvas.transferControlToOffscreen()
-        worker.postMessage({ call: 'setup', pos, outerCanvas, pixelRatio, withSubs }, [outerCanvas])
-        fetch('./demo.js').then(res => res.text()).then(text => {
-          worker.postMessage({
-            call: 'setFile',
-            id: 'demo',
-            title: 'demo',
-            value: text
-          })
-        })
-      }
-    }
+    updateHistory,
+    undoCurrentHistory,
+    ...canvas.getBoundingClientRect().toJSON()
   }
+
+  const readyPromise = new Promise(resolve =>
+    resolveReady = () => resolve(controlEditor)
+  )
+
+  return readyPromise
 }
 
 const events = createEventsHandler(window)
 
-const editors = []
+// const editors = []
 
-const create = (width, height, withSubs) => {
-  const editor = createEditor(width, height)
-  canvases.appendChild(editor.canvas)
-  editor.setup(withSubs)
-  editors.push(editor)
-}
+// const create = (width, height, withSubs) => {
+//   const editor = createEditor(width, height)
+//   editor.setup(withSubs)
+//   editors.push(editor)
+// }
 
 waves.width = 170 * window.devicePixelRatio
 waves.height = window.innerHeight * window.devicePixelRatio
@@ -616,7 +718,7 @@ waves.style.height = window.innerHeight + 'px'
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
   // create(300, window.innerHeight)
-create(window.innerWidth-170, window.innerHeight-30, true)
+// create(window.innerWidth-170, window.innerHeight-30, true)
 // create(window.innerWidth/3, window.innerHeight-30, true)
 // create(window.innerWidth/3, window.innerHeight-30, true)
 // create(window.innerWidth/3, window.innerHeight-30, true)
@@ -634,14 +736,14 @@ create(window.innerWidth-170, window.innerHeight-30, true)
 // });
 // waves.style.width = '170px'
 
-const targets = editors.map(editor => ({
-  el: editor,
-  ...editor.canvas.getBoundingClientRect().toJSON()
-}))
+// const targets = editors.map(editor => ({
+//   el: editor,
+//   ...editor.canvas.getBoundingClientRect().toJSON()
+// }))
 
 const targetHandler = type => e => {
   let _target = null
-  targets.forEach(target => {
+  Object.values(app.controlEditors).forEach(target => {
     if (isWithin(e, target)) _target = target
   })
   events.setTarget(type, _target, e)
@@ -654,8 +756,27 @@ window.addEventListener('mousedown', focusTargetHandler, { passive: false })
 window.addEventListener('mousewheel', hoverTargetHandler, { passive: false })
 window.addEventListener('mousemove', hoverTargetHandler, { passive: false })
 
-app.start()
-singleGesture(() => {
-  app.resume()
-  app.source.start(app.clock.sync.bar)
-})
+const start = async () => {
+  app.start()
+  singleGesture(() => {
+    app.resume()
+    app.source.start(app.clock.sync.bar)
+  })
+
+  await app.storage.init()
+  try {
+    await app.restoreState()
+  } catch (err) {
+    console.error('Error restoring state')
+    console.error(err)
+    console.log('Starting new session')
+    const demo = await (await fetch('/demo.js')).text()
+    const controlEditor = await createEditor({ title: 'demo', value: demo })
+    controlEditor.controlEditor = controlEditor
+    await app.storeEditor(controlEditor)
+    app.controlEditors[controlEditor.id] = controlEditor
+    await app.onchange(controlEditor)
+  }
+}
+
+start()

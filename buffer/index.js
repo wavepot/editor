@@ -226,6 +226,7 @@ Buffer.prototype.getOffsetRangeText = function(offsetRange) {
 
 Buffer.prototype.getOffsetPoint = function(offset) {
   var token = this.tokens.getByOffset('lines', offset - .5);
+  if (!token) return new Point()
   return new Point({
     x: offset - (offset > token.offset ? token.offset + (!!token.part.length) : 0),
     y: Math.min(this.loc(), token.index - (token.offset + 1 > offset) + 1)

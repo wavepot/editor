@@ -38,9 +38,10 @@ const NEWLINE = Regexp.create(['newline'])
 const WORDS = Regexp.create(['words'], 'g')
 
 class Editor {
-  constructor (title, id) {
-    this.id = id ?? (Math.random() * 10e6 | 0).toString(36)
-    this.title = title ?? 'untitled'
+  constructor (data = {}) {
+    this.id = data.id ?? (Math.random() * 10e6 | 0).toString(36)
+    this.title = data.title ?? 'untitled'
+    this.value = data.value
     this.pos = new Point
     this.scroll = { pos: new Point, target: new Point }
     this.offsetTop = 0
@@ -48,7 +49,7 @@ class Editor {
     this.controlEditor = this
     this.focusedEditor = null
     this.buffer = new Buffer
-    this.syntax = new Syntax()
+    this.syntax = new Syntax
     this.drawSync = this.drawSync.bind(this)
     this.scrollAnim = { speed: 165, isRunning: false, animFrame: null }
     this.scrollAnim.threshold = { tiny: 9, near: .35, mid: 1.9, far: 1 }
@@ -59,8 +60,8 @@ class Editor {
 
   toJSON () {
     return {
+      controlEditor: { id: this.controlEditor.id, title: this.controlEditor.title },
       id: this.id,
-      control: this.controlEditor.id,
       title: this.title,
       value: this.buffer.toString()
     }
@@ -69,6 +70,10 @@ class Editor {
   async setup (data, controlEditor) {
     const { pos, pixelRatio } = data
     const { width, height } = data.outerCanvas
+
+    this.id = data.id ?? this.id
+    this.title = data.title ?? this.title
+    this.value = data.value ?? this.value
 
     this.controlEditor = controlEditor ?? this.controlEditor
     this.isSubEditor = !!this.controlEditor && this.controlEditor !== this
@@ -168,8 +173,7 @@ class Editor {
       this.history.on('save', () => {
         postMessage({
           call: 'onhistory',
-          length: this.history.log.length,
-          needle: this.history.needle
+          ...this.history.toJSON()
         })
       })
       this.history.on('change', editor => {
@@ -184,6 +188,13 @@ class Editor {
     // this.setText('')
     // this.setText('/*""*/\n//hello\nfoo(\'hello\').indexOf(\'\\t\') // foo\nhi"hello"\n// yo')
     // this.setText(this[this.title].toString()) //getPointTabs.toString()) // + this.setup.toString())
+    if (this.value) {
+      this.buffer.setText(this.value)
+      this.updateSizes()
+      this.updateText()
+    } else {
+      this.updateSizes()
+    }
     this.moveCaret({ x: 0, y: 0 })
     // this.mark.set({ begin: { x: 5, y: 6 }, end: { x: 5, y: 10 }})
     this.markActive = true
@@ -205,7 +216,8 @@ class Editor {
     // }
   }
 
-  async addSubEditor (editor) {
+  async addSubEditor (data) {
+    const editor = new Editor(data)
     this.isLastEditor = false
     this.subEditors.forEach(editor => {
       editor.isLastEditor = false
@@ -214,11 +226,33 @@ class Editor {
     })
     await editor.setup(this.canvas, this)
     this.subEditors.push(editor)
-    // editor.setText(this.erase.toString())
-    // editor.title = 'erase'
     this.updateSizes(true)
     this.updateText()
-    // this.draw()
+    this.draw()
+  }
+
+  restoreHistory (history) {
+    const editors = {}
+    editors[this.id] = this
+    this.subEditors.forEach(editor => {
+      editors[editor.id] = editor
+    })
+    history.log.forEach(item => {
+      if (item) {
+        item.editor = editors[item.editor]
+
+        item.undo.editor = editors[item.undo.editor]
+        item.undo.caret = new Point(item.undo.caret)
+        item.undo.mark = new Area(item.undo.mark)
+
+        item.redo.editor = editors[item.redo.editor]
+        item.redo.caret = new Point(item.redo.caret)
+        item.redo.mark = new Area(item.redo.mark)
+      }
+    })
+    this.history.log = history.log
+    this.history.needle = history.needle
+    this.history.lastNeedle = history.lastNeedle
   }
 
   setFile (file) {
@@ -1649,14 +1683,18 @@ class Editor {
   }
 
   onblur () {
-    this.controlEditor.focusedEditor.hasFocus = false
-    this.controlEditor.focusedEditor.keys.clear()
+    if (this.controlEditor.focusedEditor) {
+      this.controlEditor.focusedEditor.hasFocus = false
+      this.controlEditor.focusedEditor.keys.clear()
+    }
     this.controlEditor.draw()
   }
 
   onfocus () {
-    this.controlEditor.focusedEditor.hasFocus = true
-    this.controlEditor.focusedEditor.keys.clear()
+    if (this.controlEditor.focusedEditor) {
+      this.controlEditor.focusedEditor.hasFocus = true
+      this.controlEditor.focusedEditor.keys.clear()
+    }
     this.controlEditor.draw()
   }
 
