@@ -357,6 +357,11 @@ const createEventsHandler = parent => {
       } else if (targets.focus) {
         return targets.focus.handleEvent(type, eventName, e)
       }
+      if (type === 'window') {
+        for (const editor of Object.values(app.editors)) {
+          editor.handleEvent(type, eventName, e)
+        }
+      }
     }
     target.addEventListener(
       eventName.slice(2),
@@ -616,6 +621,18 @@ const createEditor = async (data = {}) => {
     if (eventName === 'onblur') {
       undoCurrentHistory()
       removeTextArea()
+    }
+    if (eventName === 'onresize') {
+      app.editorWidth = window.innerWidth - 170
+      app.editorHeight = window.innerHeight - 30
+      for (const editor of Object.values(app.controlEditors)) {
+        editor.canvas.style.width = app.editorWidth + 'px'
+        editor.canvas.style.height = app.editorHeight + 'px'
+      }
+      return {
+        width: app.editorWidth * window.devicePixelRatio,
+        height: app.editorHeight * window.devicePixelRatio
+      }
     }
     return {/* todo */}
   })

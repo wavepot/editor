@@ -744,6 +744,7 @@ class Editor {
 
       this.view.left = this.canvas.gutter.width
       this.view.width = this.canvas.width - this.canvas.gutter.width
+      this.view.height = this.canvas.height
 
       this.padding.width = (
         this.gutter.width
@@ -755,7 +756,7 @@ class Editor {
       this.updateGutter()
     }
 
-    if (longestLineLength !== this.sizes.longestLineLength) {
+    if (longestLineLength !== this.sizes.longestLineLength || force) {
       changed = true
       this.sizes.longestLineLength = longestLineLength
 
@@ -1698,8 +1699,13 @@ class Editor {
     this.controlEditor.draw()
   }
 
-  onresize () {
-    // TODO
+  onresize ({ width, height }) {
+    console.log('resize', width, height)
+    this.canvas.width = this.canvas.outer.width = width
+    this.canvas.height = this.canvas.outer.height = height
+    this.updateSizes(true)
+    this.updateText()
+    this.draw()
   }
 }
 
