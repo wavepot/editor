@@ -1,4 +1,5 @@
 import dateId from './lib/date-id.js'
+import randomId from './lib/random-id.js'
 import Clock from './clock.js'
 import Storage from './storage.js'
 import Context from './dsp-context.js'
@@ -65,7 +66,7 @@ const app = window.app = {
     app.waveformsCanvas = new OffscreenCanvas(waves.width, waves.height)
     app.waves = waves.getContext('2d')
     app.waveforms = app.waveformsCanvas.getContext('2d')
-    app.waveforms.scale(window.devicePixelRatio, window.devicePixelRatio)
+    // app.waveforms.scale(window.devicePixelRatio, window.devicePixelRatio)
   },
   resume () {
     app.audio.resume()
@@ -79,46 +80,15 @@ const app = window.app = {
   onbar () {
     // console.log('bar')
   },
-  drawWaveForm (wave, index) {
+  redrawWaves () {
     const ctx = app.waveforms
-    const width = ctx.canvas.width*2 // window.devicePixelRatio + 1
-    const height = 75
-    ctx.save()
-    ctx.fillStyle = '#000' //'#99ff00'
-    ctx.fillRect(0, height * index, width, height)
-    // ctx.strokeStyle = '#a6e22e' //'#568208' //'#99ff00'
-    const color = 'rgba(215,255,105,0.46)'
-    const peak = '#f31'
-    ctx.lineWidth = .5
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.beginPath()
-    const y = height * index
-    const h = height / 2
-    const s = 32
-    ctx.moveTo(0, y + h)
-    const w = Math.floor(wave.length / width)
-    for (let x = 0; x < width; x++) {
-      ctx.beginPath()
-      let max = Math.abs(Math.max(...wave.slice(x*w, x*w+w)))
-      if (max > 1) {
-        ctx.strokeStyle = peak
-        max = 1
-      }
-      else ctx.strokeStyle = color
-
-      // let sum = 0
-      // for (let i = x*w; i < x*w+w; i += s) {
-        // sum += Math.abs(wave[i])
-      // }
-      // let avg = Math.min(1, (sum / (w / s) )) * h
-
-      ctx.moveTo(x/2/2, y + (h - (max * h)))
-      ctx.lineTo(x/2/2, y + (h + (max * h)))
-      ctx.stroke()
+    const height = 150
+    let i = 0
+    for (const editor of Object.values(app.controlEditors)) {
+      ctx.drawImage(editor.wave, 0, i * height)
+      i++
     }
-    ctx.lineTo(width, y + h)
-    ctx.stroke()
-    ctx.restore()
+    app.animTick(false)
   },
   animTick (once = false) {
     if (once !== false) app.animFrame = requestAnimationFrame(app.animTick)
@@ -189,7 +159,8 @@ const app = window.app = {
       editor.renderWorker.terminate()
     }
     editor.renderWorker = worker
-    app.drawWaveForm(output[0], Object.values(app.controlEditors).indexOf(editor))
+    editor.drawWaveForm(output[0])
+    app.redrawWaves()
   },
   async renderEditor (editor, bar = 0) {
     const worker = new Worker('./dsp-worker.js', { type: 'module' })
@@ -354,15 +325,34 @@ const createEventsHandler = parent => {
 
   const handlerMapper = (target, type) => eventName => {
     const handler = e => {
+      let targets = events.targets
       if (type === 'key') {
         if (eventName === 'onkeydown') {
           if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             return app.audio.state === 'running'
               ? app.suspend()
               : app.resume()
-          } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '>') {
-            addNewEditor()
-            app.updateSizes()
+          } else if ((e.ctrlKey || e.metaKey) && e.key === '=') {
+            e.preventDefault()
+            addNewEditor().then(() => app.updateSizes())
+            return
+          } else if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+            e.preventDefault()
+            const editor = events.targets.focus
+            if (confirm('Delete track "' + editor.id + '" ?')) {
+              editor.destroy()
+              delete app.controlEditors[editor.id]
+              delete app.editors[editor.id]
+              if (!Object.keys(app.controlEditors).length) {
+                addNewEditor().then(() => app.updateSizes())
+              }
+              events.targets = {}
+              app.waves.clearRect(0, 0, waves.width, waves.height)
+              app.waveforms.clearRect(0, 0, app.waveformsCanvas.width, app.waveformsCanvas.height)
+              app.updateSizes()
+              app.redrawWaves()
+              app.storage.setItem('editors', JSON.stringify(Object.keys(app.editors)))
+            }
             return
           } else if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
             e.preventDefault()
@@ -402,27 +392,12 @@ const createEventsHandler = parent => {
                   await app.storage.setItem(key, value)
                 }
                 for (const editor of Object.values(app.controlEditors)) {
-                  try { editor.worker.terminate() } catch (err) {
-                    console.error('Error terminating editor worker [' + editor.id + '] ' + editor.title)
-                  }
-                  try { editor.renderWorker.terminate() } catch (err) {
-                    console.error('Error terminating render worker [' + editor.id + '] ' + editor.title)
-                  }
-                  try { editor.audio.disconnect() } catch (err) {
-                    console.error('Error disconnecting audio [' + editor.id + '] ' + editor.title)
-                  }
-                  try { editor.undoCurrentHistory() } catch (err) {
-                    console.error('Error undoing history [' + editor.id + '] ' + editor.title)
-                  }
-                  try { canvases.removeChild(editor.canvas) } catch (err) {
-                    console.error('Error removing canvas [' + editor.id + '] ' + editor.title)
-                  }
+                  editor.destroy()
                 }
                 app.controlEditors = {}
                 app.editors = {}
                 events.targets = {}
                 await app.restoreState()
-
                 for (const editor of Object.values(app.controlEditors)) {
                   editor.audio.start(app.clock.sync.bar)
                 }
@@ -478,9 +453,10 @@ const createEventsHandler = parent => {
   ].map(handlerMapper(window, 'window'))
 
   return {
+    targets,
     setTarget (type, target, e) {
-      const previous = targets[type]
-      targets[type] = target
+      const previous = this.targets[type]
+      this.targets[type] = target
       if (previous !== target) {
         const focus = type === 'focus'
         if (previous) {
@@ -510,10 +486,6 @@ const createEventsHandler = parent => {
         target.removeEventListener(eventName, fn)
       }
     }
-  }
-
-  return {
-    targets
   }
 }
 
@@ -585,7 +557,7 @@ const createEditor = async (data = {}) => {
           textarea.selectionStart = -1
           textarea.selectionEnd = -1
           worker.postMessage({ call: 'onhistory', needle })
-          app.storeHistory(controlEditor, history)
+          app.storeHistory(editor, history)
         } else {
           document.execCommand('redo', false)
         }
@@ -652,7 +624,7 @@ const createEditor = async (data = {}) => {
         document.execCommand('insertText', false, _history.needle)
       }
 
-      app.storeHistory(controlEditor, history)
+      app.storeHistory(editor, history)
     },
     onselection ({ text }) {
       if (textarea) {
@@ -805,11 +777,58 @@ const createEditor = async (data = {}) => {
   rect.top += canvases.scrollTop
   rect.bottom += canvases.scrollTop
 
-  const controlEditor = {
+  const wave = new OffscreenCanvas(170*2, 75*2)
+  wave.getContext('2d').scale(window.devicePixelRatio, window.devicePixelRatio)
+
+  const drawWaveForm = data => {
+    const ctx = wave.getContext('2d')
+    const width = ctx.canvas.width*2 // window.devicePixelRatio + 1
+    const height = 75
+    ctx.save()
+    ctx.fillStyle = '#000' //'#99ff00'
+    ctx.fillRect(0, 0, width, height)
+    // ctx.strokeStyle = '#a6e22e' //'#568208' //'#99ff00'
+    const color = 'rgba(215,255,105,0.46)'
+    const peak = '#f31'
+    ctx.lineWidth = .5
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.beginPath()
+    const y = height
+    const h = height / 2
+    const s = 32
+    ctx.moveTo(0, h)
+    const w = Math.floor(data.length / width)
+    for (let x = 0; x < width; x++) {
+      ctx.beginPath()
+      let max = Math.abs(Math.max(...data.slice(x*w, x*w+w)))
+      if (max > 1) {
+        ctx.strokeStyle = peak
+        max = 1
+      }
+      else ctx.strokeStyle = color
+
+      // let sum = 0
+      // for (let i = x*w; i < x*w+w; i += s) {
+        // sum += Math.abs(wave[i])
+      // }
+      // let avg = Math.min(1, (sum / (w / s) )) * h
+
+      ctx.moveTo(x/2/2, (h - (max * h)))
+      ctx.lineTo(x/2/2, (h + (max * h)))
+      ctx.stroke()
+    }
+    ctx.lineTo(width, h)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  const editor = {
     ...data,
     audio,
     buffer,
     canvas,
+    wave,
+    drawWaveForm,
     worker,
     history,
     handleEvent,
@@ -818,8 +837,26 @@ const createEditor = async (data = {}) => {
     ...rect
   }
 
+  editor.destroy = () => {
+    try { editor.worker.terminate() } catch (err) {
+      console.error('Error terminating editor worker [' + editor.id + '] ' + editor.title)
+    }
+    try { editor.renderWorker.terminate() } catch (err) {
+      console.error('Error terminating render worker [' + editor.id + '] ' + editor.title)
+    }
+    try { editor.audio.disconnect() } catch (err) {
+      console.error('Error disconnecting audio [' + editor.id + '] ' + editor.title)
+    }
+    try { editor.undoCurrentHistory() } catch (err) {
+      console.error('Error undoing history [' + editor.id + '] ' + editor.title)
+    }
+    try { canvases.removeChild(editor.canvas) } catch (err) {
+      console.error('Error removing canvas [' + editor.id + '] ' + editor.title)
+    }
+  }
+
   const readyPromise = new Promise(resolve =>
-    resolveReady = () => resolve(controlEditor)
+    resolveReady = () => resolve(editor)
   )
 
   return readyPromise
@@ -891,11 +928,13 @@ window.addEventListener('mousemove', hoverTargetHandler, { passive: false })
 
 const addNewEditor = async () => {
   const demo = await (await fetch('/demo.js')).text()
-  const controlEditor = await createEditor({ title: 'demo-' + Object.keys(app.controlEditors).length, value: demo })
+  const controlEditor = await createEditor({ title: 'untitled-' + randomId(), value: demo })
   controlEditor.controlEditor = controlEditor
   await app.storeEditor(controlEditor)
   app.controlEditors[controlEditor.id] = controlEditor
+  controlEditor.audio.start(app.clock.sync.bar)
   await app.onchange(controlEditor)
+  return controlEditor
 }
 
 const start = async () => {
