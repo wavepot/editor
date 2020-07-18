@@ -1,3 +1,4 @@
+import dateId from './lib/date-id.js'
 import Clock from './clock.js'
 import Storage from './storage.js'
 import Context from './dsp-context.js'
@@ -8,16 +9,36 @@ import DynamicCache from './dynamic-cache.js'
 
 DynamicCache.install()
 
+let ignore = true
+
 const app = window.app = {
   bpm: 140,
   scripts: {},
   editors: {},
-  targets: {},
   controlEditors: {},
   editorWidth: window.innerWidth - 170,
   editorHeight: window.innerHeight - 30,
   storage: new Storage,
   cache: new DynamicCache('wavepot', { 'Content-Type': 'application/javascript' }),
+  updateSizes () {
+    app.editorWidth = ((window.innerWidth - 170) / Math.max(1, Math.min(3, Object.keys(app.controlEditors).length)))
+    app.editorHeight = window.innerHeight - 30
+    for (const editor of Object.values(app.controlEditors)) {
+      editor.canvas.style.width = app.editorWidth + 'px'
+      editor.canvas.style.height = app.editorHeight + 'px'
+      const rect = editor.canvas.getBoundingClientRect().toJSON()
+      rect.left += canvases.scrollLeft
+      rect.right += canvases.scrollLeft
+      rect.top += canvases.scrollTop
+      rect.bottom += canvases.scrollTop
+      Object.assign(editor, rect)
+      editor.worker.postMessage({
+        call: 'onresize',
+        width: app.editorWidth * window.devicePixelRatio,
+        height: app.editorHeight * window.devicePixelRatio,
+      })
+    }
+  },
   start () {
     if (app.audio) return
     app.audio =
@@ -40,16 +61,7 @@ const app = window.app = {
     // app.byteTimeDomainData = new Uint8Array(app.analyser.frequencyBinCount)
     // app.analyser.connect(app.audio.destination)
     app.gain = app.audio.createGain()
-    // app.gain.connect(app.audio.destination)
-    app.buffer = app.audio.createBuffer(
-      1,
-      app.clock.lengths.bar,
-      app.audio.sampleRate
-    )
-    app.source = app.audio.createBufferSource()
-    app.source.buffer = app.buffer
-    app.source.connect(app.gain)
-    app.source.loop = true
+    app.gain.connect(app.audio.destination)
     app.waveformsCanvas = new OffscreenCanvas(waves.width, waves.height)
     app.waves = waves.getContext('2d')
     app.waveforms = app.waveformsCanvas.getContext('2d')
@@ -67,23 +79,23 @@ const app = window.app = {
   onbar () {
     // console.log('bar')
   },
-  drawWaveForm (wave) {
+  drawWaveForm (wave, index) {
     const ctx = app.waveforms
     const width = ctx.canvas.width*2 // window.devicePixelRatio + 1
     const height = 75
     ctx.save()
     ctx.fillStyle = '#000' //'#99ff00'
-    ctx.fillRect(0, 0, width, height)
+    ctx.fillRect(0, height * index, width, height)
     // ctx.strokeStyle = '#a6e22e' //'#568208' //'#99ff00'
     const color = 'rgba(215,255,105,0.46)'
     const peak = '#f31'
     ctx.lineWidth = .5
     ctx.globalCompositeOperation = 'lighter'
     ctx.beginPath()
-    const y = height
+    const y = height * index
     const h = height / 2
     const s = 32
-    ctx.moveTo(0, h)
+    ctx.moveTo(0, y + h)
     const w = Math.floor(wave.length / width)
     for (let x = 0; x < width; x++) {
       ctx.beginPath()
@@ -100,16 +112,16 @@ const app = window.app = {
       // }
       // let avg = Math.min(1, (sum / (w / s) )) * h
 
-      ctx.moveTo(x/2/2, h - (max * h))
-      ctx.lineTo(x/2/2, h + (max * h))
+      ctx.moveTo(x/2/2, y + (h - (max * h)))
+      ctx.lineTo(x/2/2, y + (h + (max * h)))
       ctx.stroke()
     }
-    ctx.lineTo(width, h)
+    ctx.lineTo(width, y + h)
     ctx.stroke()
     ctx.restore()
   },
-  animTick () {
-    app.animFrame = requestAnimationFrame(app.animTick)
+  animTick (once = false) {
+    if (once !== false) app.animFrame = requestAnimationFrame(app.animTick)
     const ctx = app.waves
     ctx.drawImage(app.waveformsCanvas, 0, 0)
     ctx.save()
@@ -118,7 +130,7 @@ const app = window.app = {
     const x = ((app.clock.c.time % app.clock.t.bar) / app.clock.t.bar) * waves.width
     ctx.strokeStyle = '#a2a2b2'
     ctx.moveTo(x, 0)
-    ctx.lineTo(x, 150)
+    ctx.lineTo(x, 150 * Object.keys(app.controlEditors).length)
     ctx.stroke()
     ctx.restore()
   },
@@ -153,31 +165,31 @@ const app = window.app = {
   // },
   async onchange (editor) {
     console.log('changed', editor)
+    editor = Object.assign(app.controlEditors[editor.id], editor)
     await app.storeEditor(editor)
     const filename = await app.saveEditor(editor)
     const methods = await readMethods(filename)
     if (!methods.default) {
       throw new Error('Render Error: no `export default` found')
     }
-    editor = {
-      ...editor,
+    Object.assign(editor, {
       filename,
       method: methods.default,
       bars: 1,
       channels: 1
-    }
+    })
     const worker = await app.renderEditor(editor)
     const { output } = worker.context
     for (const [i, data] of output.entries()) {
-      app.buffer.getChannelData(i).set(data)
+      editor.buffer.getChannelData(i).set(data)
     }
     console.log(editor.title, ': render complete')
-    if (app.scripts[editor.id].worker) {
+    if (editor.renderWorker) {
       console.log(editor.title, ': terminate previous worker')
-      app.scripts[editor.id].worker.terminate()
+      editor.renderWorker.terminate()
     }
-    app.scripts[editor.id].worker = worker
-    app.drawWaveForm(output[0])
+    editor.renderWorker = worker
+    app.drawWaveForm(output[0], Object.values(app.controlEditors).indexOf(editor))
   },
   async renderEditor (editor, bar = 0) {
     const worker = new Worker('./dsp-worker.js', { type: 'module' })
@@ -197,12 +209,10 @@ const app = window.app = {
       sampleRate: app.audioContext.sampleRate
     })
 
-    const script = app.scripts[editor.id]
-    if (script && script.editor.channels === editor.channels) {
-      worker.context.n = script.worker.context.n
-      worker.context.output = script.worker.context.output
+    if (editor.renderWorker) {
+      worker.context.n = editor.renderWorker.context.n
+      worker.context.output = editor.renderWorker.context.output
     } else {
-      app.scripts[editor.id] = { editor }
       const sharedBuffer = new SharedBuffer(
         worker.context.channels,
         worker.context.length
@@ -273,6 +283,8 @@ const app = window.app = {
     await app.storage.setItem('editors', JSON.stringify(Object.keys(app.editors)))
   },
   async restoreState () {
+    ignore = true
+
     // restore all editors
     const editors = JSON.parse(await app.storage.getItem('editors'))
     for (const id of editors.values()) {
@@ -311,9 +323,15 @@ const app = window.app = {
       controlEditors[id].updateHistory()
     }
 
-    for (const id in controlEditors) {
-      app.onchange(controlEditors[id])
-    }
+    await Promise.all(
+      Object
+        .values(controlEditors)
+        .map(editor => app.onchange(editor)
+    ))
+
+    app.animTick(false)
+
+    ignore = false
   },
   async storeHistory (controlEditor, history) {
     await app.storage.setItem('history_' + controlEditor.id, JSON.stringify(history))
@@ -342,6 +360,75 @@ const createEventsHandler = parent => {
             return app.audio.state === 'running'
               ? app.suspend()
               : app.resume()
+          } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '>') {
+            addNewEditor()
+            app.updateSizes()
+            return
+          } else if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+            e.preventDefault()
+            const allEditors = Object.fromEntries(Object.values(app.editors).map(editor => {
+              const key = 'editor_' + editor.id
+              return [key, localStorage.getItem(key)]
+            }))
+            const allHistory = Object.fromEntries(Object.values(app.editors).map(editor => {
+              const key = 'history_' + editor.id
+              return [key, localStorage.getItem(key)]
+            }))
+            const fullStateJson = JSON.stringify({
+              editors: localStorage.editors,
+              ...allEditors,
+              ...allHistory
+            }, null, 2)
+            const filename = dateId(Object.values(app.controlEditors)[0].title) + '.json'
+            const file = new File([fullStateJson], filename, { type: 'application/json' })
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(file)
+            a.download = filename
+            a.click()
+            return false
+          } else if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+            e.preventDefault()
+            const input = document.createElement('input')
+            input.type = 'file'
+            input.accept = '.json'
+            input.onchange = e => {
+              const file = e.target.files[0]
+              const projectName = file.name.split('.json')[0]
+              const reader = new FileReader()
+              reader.readAsText(file, 'utf-8')
+              reader.onload = async e => {
+                const fullState = JSON.parse(e.target.result)
+                for (const [key, value] of Object.entries(fullState)) {
+                  await app.storage.setItem(key, value)
+                }
+                for (const editor of Object.values(app.controlEditors)) {
+                  try { editor.worker.terminate() } catch (err) {
+                    console.error('Error terminating editor worker [' + editor.id + '] ' + editor.title)
+                  }
+                  try { editor.renderWorker.terminate() } catch (err) {
+                    console.error('Error terminating render worker [' + editor.id + '] ' + editor.title)
+                  }
+                  try { editor.audio.disconnect() } catch (err) {
+                    console.error('Error disconnecting audio [' + editor.id + '] ' + editor.title)
+                  }
+                  try { editor.undoCurrentHistory() } catch (err) {
+                    console.error('Error undoing history [' + editor.id + '] ' + editor.title)
+                  }
+                  try { canvases.removeChild(editor.canvas) } catch (err) {
+                    console.error('Error removing canvas [' + editor.id + '] ' + editor.title)
+                  }
+                }
+                app.controlEditors = {}
+                app.editors = {}
+                events.targets = {}
+                await app.restoreState()
+
+                for (const editor of Object.values(app.controlEditors)) {
+                  editor.audio.start(app.clock.sync.bar)
+                }
+              }
+            }
+            input.click()
           }
         }
       }
@@ -424,6 +511,10 @@ const createEventsHandler = parent => {
       }
     }
   }
+
+  return {
+    targets
+  }
 }
 
 const createEditor = async (data = {}) => {
@@ -434,7 +525,17 @@ const createEditor = async (data = {}) => {
   let textarea
   let selectionText = ''
   let history = { log: [null], needle: 1, lastNeedle: 1 }
-  let ignore = true
+
+  const buffer = app.audio.createBuffer(
+    1,
+    app.clock.lengths.bar,
+    app.audio.sampleRate
+  )
+
+  const audio = app.audio.createBufferSource()
+  audio.buffer = buffer
+  audio.connect(app.gain)
+  audio.loop = true
 
   const createTextArea = e => {
     textarea = document.createElement('textarea')
@@ -505,6 +606,7 @@ const createEditor = async (data = {}) => {
     }
   }
 
+  app.updateSizes()
   const canvas = document.createElement('canvas')
   const pixelRatio = window.devicePixelRatio
   canvas.width = app.editorWidth * pixelRatio
@@ -521,6 +623,10 @@ const createEditor = async (data = {}) => {
   const methods = {
     onready () {
       const pos = canvas.getBoundingClientRect().toJSON()
+      pos.left += canvases.scrollLeft
+      pos.right += canvases.scrollLeft
+      pos.top += canvases.scrollTop
+      pos.bottom += canvases.scrollTop
       const outerCanvas = canvas.transferControlToOffscreen()
       worker.postMessage({
         call: 'setup',
@@ -586,12 +692,16 @@ const createEditor = async (data = {}) => {
     if (textarea) {
       textarea.focus()
       ignore = true
-      for (var i = 1; i <= history.log.length; i++) {
-        textarea.select()
-        document.execCommand('insertText', false, i)
+      if (history.log.length > 1) {
+        for (var i = 1; i <= history.log.length; i++) {
+          textarea.select()
+          document.execCommand('insertText', false, i)
+        }
       }
-      for (var i = history.needle; i < history.log.length; i++) {
-        document.execCommand('undo', false)
+      if (history.needle < history.log.length) {
+        for (var i = history.needle; i < history.log.length; i++) {
+          document.execCommand('undo', false)
+        }
       }
       ignore = false
       textarea.selectionStart = -1
@@ -603,8 +713,10 @@ const createEditor = async (data = {}) => {
     if (textarea) {
       ignore = true
       textarea.focus()
-      for (var i = 1; i <= history.needle; i++) {
-        document.execCommand('undo', false)
+      if (history.needle > 1) {
+        for (var i = 1; i <= history.needle; i++) {
+          document.execCommand('undo', false)
+        }
       }
       ignore = false
       textarea.selectionStart = -1
@@ -623,13 +735,7 @@ const createEditor = async (data = {}) => {
       removeTextArea()
     }
     if (eventName === 'onresize') {
-      app.editorWidth = window.innerWidth - 170
-      app.editorHeight = window.innerHeight - 30
-      for (const editor of Object.values(app.controlEditors)) {
-        editor.canvas.style.width = app.editorWidth + 'px'
-        editor.canvas.style.height = app.editorHeight + 'px'
-        Object.assign(editor, editor.canvas.getBoundingClientRect().toJSON())
-      }
+      app.updateSizes()
       return {
         width: app.editorWidth * window.devicePixelRatio,
         height: app.editorHeight * window.devicePixelRatio
@@ -693,15 +799,23 @@ const createEditor = async (data = {}) => {
     }
   })
 
+  const rect = canvas.getBoundingClientRect().toJSON()
+  rect.left += canvases.scrollLeft
+  rect.right += canvases.scrollLeft
+  rect.top += canvases.scrollTop
+  rect.bottom += canvases.scrollTop
+
   const controlEditor = {
     ...data,
+    audio,
+    buffer,
     canvas,
     worker,
     history,
     handleEvent,
     updateHistory,
     undoCurrentHistory,
-    ...canvas.getBoundingClientRect().toJSON()
+    ...rect
   }
 
   const readyPromise = new Promise(resolve =>
@@ -760,6 +874,7 @@ waves.style.height = window.innerHeight + 'px'
 // }))
 
 const targetHandler = type => e => {
+  if (ignore) return
   let _target = null
   Object.values(app.controlEditors).forEach(target => {
     if (isWithin(e, target)) _target = target
@@ -774,16 +889,28 @@ window.addEventListener('mousedown', focusTargetHandler, { passive: false })
 window.addEventListener('mousewheel', hoverTargetHandler, { passive: false })
 window.addEventListener('mousemove', hoverTargetHandler, { passive: false })
 
+const addNewEditor = async () => {
+  const demo = await (await fetch('/demo.js')).text()
+  const controlEditor = await createEditor({ title: 'demo-' + Object.keys(app.controlEditors).length, value: demo })
+  controlEditor.controlEditor = controlEditor
+  await app.storeEditor(controlEditor)
+  app.controlEditors[controlEditor.id] = controlEditor
+  await app.onchange(controlEditor)
+}
+
 const start = async () => {
   app.start()
   singleGesture(() => {
     app.resume()
-    app.source.start(app.clock.sync.bar)
+    for (const editor of Object.values(app.controlEditors)) {
+      editor.audio.start(app.clock.sync.bar)
+    }
   })
 
   await app.storage.init()
   try {
     await app.restoreState()
+    app.updateSizes()
   } catch (err) {
     console.error('Error restoring state')
     console.error(err)
