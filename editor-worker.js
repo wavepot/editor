@@ -266,7 +266,7 @@ class Editor {
   }
 
   erase (moveByChars = 0) {
-    if (this.markActive) {
+    if (this.markActive && !this.mark.isEmpty()) {
       this.controlEditor.history.setEditor(this)
       this.controlEditor.history.save(true)
       const area = this.mark.get()
@@ -274,6 +274,7 @@ class Editor {
       this.buffer.removeArea(area)
       this.markClear(true)
     } else {
+      this.markClear(true)
       this.controlEditor.history.setEditor(this)
       this.controlEditor.history.save()
       if (moveByChars) this.moveByChars(moveByChars)
@@ -369,12 +370,12 @@ class Editor {
 
     this.moveByChars(length)
 
-    if ('{' === text) this.buffer.insert(this.caret.pos, '}')
-    else if ('(' === text) this.buffer.insert(this.caret.pos, ')')
-    else if ('[' === text) this.buffer.insert(this.caret.pos, ']')
-    else if ('\'' === text) this.buffer.insert(this.caret.pos, '\'')
-    else if ('"' === text) this.buffer.insert(this.caret.pos, '"')
-    else if ('`' === text) this.buffer.insert(this.caret.pos, '`')
+    // if ('{' === text) this.buffer.insert(this.caret.pos, '}')
+    // else if ('(' === text) this.buffer.insert(this.caret.pos, ')')
+    // else if ('[' === text) this.buffer.insert(this.caret.pos, ']')
+    // else if ('\'' === text) this.buffer.insert(this.caret.pos, '\'')
+    // else if ('"' === text) this.buffer.insert(this.caret.pos, '"')
+    // else if ('`' === text) this.buffer.insert(this.caret.pos, '`')
 
     this.updateSizes()
     this.updateText()

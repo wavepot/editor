@@ -1,28 +1,54 @@
 import toFinite from './lib/to-finite.js'
 
 export default (fn, context) => {
-  const { output, length } = context
+  const { output } = context
 
   context.renderStartTime = performance.now() / 1000
 
+  const result = fn(context)
+
+  try {
+    if (result instanceof Float32Array) {
+      context.handle = true
+      // output[0].set(result)
+    } else if (result?.[0] instanceof Float32Array) {
+      context.handle = true
+      for (let c = 0; c < result.length; c++) {
+        // output[c].set(result[c])
+      }
+    } else if (result == null) {
+      context.handle = true
+    }
+  } catch (err) {
+    context.handle = true
+    console.error(err)
+  }
+
   if (context.handle) {
-    fn(context)
-    context.n += length // increment sample to one length
+    context.n += output[0].length
   } else {
-    if (output.length === 1) {
-      renderMono(fn, context)
-    } else {
+    context.n++
+
+    if (Array.isArray(result)) {
+      for (let c = 0; c < result.length; c++) {
+        output[c][0] = toFinite(result[c])
+      }
       renderMulti(fn, context)
+    } else {
+      output[0][0] = toFinite(result)
+      renderMono(fn, context)
     }
   }
 
   context.renderDuration = performance.now() / 1000 - context.renderStartTime
+  console.log('time to render', context.renderDuration)
 }
 
 const renderMono = (fn, context) => {
-  const { output, length } = context
+  const { output } = context
+  const length = output[0].length
 
-  for (let i = 0;
+  for (let i = 1;
     i < length; // render one length
     i++,
     context.n++ // increment sample position
@@ -32,10 +58,11 @@ const renderMono = (fn, context) => {
 }
 
 const renderMulti = (fn, context) => {
-  const { output, length } = context
+  const { output } = context
+  const length = output[0].length
   const channels = output.length
 
-  for (let i = 0,
+  for (let i = 1,
     channel = 0,
     sample = [];
     i < length; // render one length

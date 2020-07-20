@@ -12,7 +12,7 @@ const worker = self.worker = {
   },
 
   async setup ({ context }) {
-    context = new Context(context)
+    context = Context(context)
     const { filename, method, _canvas } = context
 
     this.canvas = _canvas
@@ -26,17 +26,17 @@ const worker = self.worker = {
       context.setupDuration = performance.now() / 1000 - context.setupStartTime
     }
 
-    postMessage({ call: 'onsetup', context: { ...context, _canvas: null }})
+    postMessage({ call: 'onsetup', context: { ...context.toJSON(), _canvas: null }})
   },
 
   render ({ context }) {
-    context = new Context(context)
+    context = Context(context)
     render(this.fn, context)
-    postMessage({ call: 'onrender', context })
+    postMessage({ call: 'onrender', context: context.toJSON() })
   },
 
   draw ({ context }) {
-    context = new Context({ ...context, _canvas: this.canvas })
+    context = Context({ ...context.toJSON(), _canvas: this.canvas })
     setInterval(this.fn, 1000 / 60, context)
   }
 }

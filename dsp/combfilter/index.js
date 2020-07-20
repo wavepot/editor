@@ -7,22 +7,16 @@
  * @license mit
  */
 
-export default CombFilter;
-
-function CombFilter(size){
-  if (!(this instanceof CombFilter)) return new CombFilter(size);
-  this.size = size;
-  this.index = 0;
-  this.buffer = new Float32Array(size);
-  this.feedback = 0;
-  this.filter = 0;
-  this.damp = 0;
+export default async (context, size = 1000) => {
+  const buffer = new Float32Array(size)
+  let filter = 0.0
+  let sample = 0.0
+  let index = 0
+  return ({ input }, { feedback = .5, damp = .5 } = {}) => {
+    sample = buffer[index]
+    filter = sample * (1 - damp) + filter * damp
+    buffer[index] = input * 0.015 + filter * feedback
+    if (++index === size) index = 0
+    return sample
+  }
 }
-
-CombFilter.prototype.run = function(input){
-  var output = this.buffer[this.index];
-  this.filter = output * (1 - this.damp) + this.filter * this.damp;
-  this.buffer[this.index] = input * 0.015 + this.filter * this.feedback;
-  if (++this.index === this.size) this.index = 0;
-  return output;
-};

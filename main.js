@@ -22,7 +22,7 @@ const app = window.app = {
   storage: new Storage,
   cache: new DynamicCache('wavepot', { 'Content-Type': 'application/javascript' }),
   updateSizes () {
-    app.editorWidth = ((window.innerWidth - 170) / Math.max(1, Math.min(3, Object.keys(app.controlEditors).length)))
+    app.editorWidth = ((window.innerWidth - 170) / Math.max(1, Math.min(2, Object.keys(app.controlEditors).length)))
     app.editorHeight = window.innerHeight - 30
     for (const editor of Object.values(app.controlEditors)) {
       editor.canvas.style.width = app.editorWidth + 'px'
@@ -63,46 +63,44 @@ const app = window.app = {
     // app.analyser.connect(app.audio.destination)
     app.gain = app.audio.createGain()
     app.gain.connect(app.audio.destination)
-    app.waveformsCanvas = new OffscreenCanvas(waves.width, waves.height)
-    app.waves = waves.getContext('2d')
-    app.waveforms = app.waveformsCanvas.getContext('2d')
-    // app.waveforms.scale(window.devicePixelRatio, window.devicePixelRatio)
+
+    app.waveformWorker = new Worker('./waveform-worker.js', { type: 'module' })
+    app.waveformWorker.onerror = e => console.error(e)
+    const waveformCanvasOffscreen = waves.transferControlToOffscreen()
+    const linesCanvasOffscreen = lines.transferControlToOffscreen()
+    app.waveformSharedClockTime = new SharedBuffer(1, 1)
+    app.waveformWorker.postMessage({
+      call: 'setup',
+      canvas: waveformCanvasOffscreen,
+      lines: linesCanvasOffscreen,
+      clock: { time: app.waveformSharedClockTime.output[0], bar: app.clock.t.bar },
+      pixelRatio: window.devicePixelRatio
+    }, [waveformCanvasOffscreen, linesCanvasOffscreen])
   },
   resume () {
     app.audio.resume()
     cancelAnimationFrame(app.animFrame)
     app.animFrame = requestAnimationFrame(app.animTick)
+    app.waveformWorker.postMessage({ call: 'resume' })
   },
   suspend () {
     app.audio.suspend()
     cancelAnimationFrame(app.animFrame)
+    app.waveformWorker.postMessage({ call: 'suspend' })
   },
   onbar () {
     // console.log('bar')
   },
   redrawWaves () {
-    const ctx = app.waveforms
-    const height = 150
-    let i = 0
-    for (const editor of Object.values(app.controlEditors)) {
-      ctx.drawImage(editor.wave, 0, i * height)
-      i++
-    }
+    app.waveformWorker.postMessage({ call: 'redrawWaves' })
     app.animTick(false)
   },
-  animTick (once = false) {
-    if (once !== false) app.animFrame = requestAnimationFrame(app.animTick)
-    const ctx = app.waves
-    ctx.drawImage(app.waveformsCanvas, 0, 0)
-    ctx.save()
-    ctx.beginPath()
-    ctx.lineWidth = window.devicePixelRatio
-    const x = ((app.clock.c.time % app.clock.t.bar) / app.clock.t.bar) * waves.width
-    ctx.strokeStyle = '#a2a2b2'
-    ctx.moveTo(x, 0)
-    ctx.lineTo(x, 150 * Object.keys(app.controlEditors).length)
-    ctx.stroke()
-    ctx.restore()
+  animTick (animate) {
+    cancelAnimationFrame(app.animFrame)
+    if (animate !== false) app.animFrame = requestAnimationFrame(app.animTick)
+    app.waveformSharedClockTime.output[0][0] = app.clock.c.time
+    // app.waveformWorker.postMessage({ call: 'setClock', time: app.clock.c.time })
+    // ctx.restore()
   },
   // animTick () {
   //   app.animFrame = requestAnimationFrame(app.animTick)
@@ -136,31 +134,90 @@ const app = window.app = {
   async onchange (editor) {
     console.log('changed', editor)
     editor = Object.assign(app.controlEditors[editor.id], editor)
+    editor.changes++
+    app.waveformWorker.postMessage({ call: 'createWaveform', id: editor.id })
     await app.storeEditor(editor)
     const filename = await app.saveEditor(editor)
     const methods = await readMethods(filename)
     if (!methods.default) {
       throw new Error('Render Error: no `export default` found')
     }
+
+    let prevAudio
+    if (editor.buffer && (
+      (methods.bars && editor.bars !== Number(methods.bars?.value))
+    || (methods.channels && editor.channels !== Number(methods.channels?.value))
+    )) {
+      prevAudio = editor.audio
+      editor.buffer = null
+      editor.audio = null
+    }
+
     Object.assign(editor, {
       filename,
       method: methods.default,
-      bars: 1,
-      channels: 1
+      bars: Number(methods.bars?.value ?? 1),
+      channels: Number(methods.channels?.value ?? 1)
     })
+
+    let newAudio
+    if (!editor.buffer) {
+      newAudio = true
+
+      editor.buffer = app.audio.createBuffer(
+        editor.channels,
+        editor.bars * app.clock.lengths.bar,
+        app.audio.sampleRate
+      )
+
+      editor.audio = app.audio.createBufferSource()
+      editor.audio.buffer = editor.buffer
+      editor.audio.connect(app.gain)
+      editor.audio.loop = true
+
+      editor.sharedBuffer = new SharedBuffer(
+        editor.channels,
+        editor.buffer.length
+      )
+
+      if (editor.renderWorker) {
+        console.log(editor.title, ': terminate previous worker')
+        editor.renderWorker.terminate()
+      }
+      delete editor.renderWorker
+    }
+
     const worker = await app.renderEditor(editor)
     const { output } = worker.context
     for (const [i, data] of output.entries()) {
       editor.buffer.getChannelData(i).set(data)
     }
+    const syncTime = app.clock.sync.bar
+    if (prevAudio) {
+      try {
+        prevAudio.stop(syncTime)
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    if (newAudio) {
+      editor.syncTime = syncTime
+      editor.audio.start(syncTime)
+    }
+    app.waveformWorker.postMessage({
+      call: 'drawWaveform',
+      id: editor.id,
+      syncTime: editor.syncTime,
+      bars: editor.bars,
+      data: output[0]
+    })
     console.log(editor.title, ': render complete')
     if (editor.renderWorker) {
       console.log(editor.title, ': terminate previous worker')
       editor.renderWorker.terminate()
     }
     editor.renderWorker = worker
-    editor.drawWaveForm(output[0])
-    app.redrawWaves()
+    editor.changes--
   },
   async renderEditor (editor, bar = 0) {
     const worker = new Worker('./dsp-worker.js', { type: 'module' })
@@ -168,30 +225,17 @@ const app = window.app = {
     worker.onerror = e => console.error(e)
     worker.onmessage = ({ data }) => app[data.call](worker, data)
 
-    const ctx = worker.context = new Context({
+    const ctx = worker.context = Context({
       filename: editor.filename,
       method: editor.method,
       bars: editor.bars,
       channels: editor.channels,
       // _canvas: this.offscreenCanvas,
-      length: app.clock.lengths.bar,
       lengths: app.clock.lengths,
       totalLength: app.clock.lengths.bar * editor.bars,
-      sampleRate: app.audioContext.sampleRate
+      sampleRate: app.audioContext.sampleRate,
+      output: editor.sharedBuffer.output
     })
-
-    if (editor.renderWorker) {
-      worker.context.n = editor.renderWorker.context.n
-      worker.context.output = editor.renderWorker.context.output
-    } else {
-      const sharedBuffer = new SharedBuffer(
-        worker.context.channels,
-        worker.context.length
-      )
-      worker.context.n = bar * length
-      // worker.context._input = input
-      worker.context.output = sharedBuffer.output
-    }
 
     await app.setup(worker)
     await app.render(worker)
@@ -212,11 +256,11 @@ const app = window.app = {
         resolve(output)
         // worker.context._input = null
       }
-      worker.postMessage({ call: 'render', context: worker.context })
+      worker.postMessage({ call: 'render', context: worker.context.toJSON() })
     })
   },
   setup (worker) {
-    worker.postMessage({ call: 'setup', context: worker.context })
+    worker.postMessage({ call: 'setup', context: worker.context.toJSON() })
     //, [this.offscreenCanvas])
     return new Promise((resolve, reject) => {
       worker.setupTimeout = setTimeout(() => {
@@ -300,8 +344,6 @@ const app = window.app = {
         .map(editor => app.onchange(editor)
     ))
 
-    app.animTick(false)
-
     ignore = false
   },
   async storeHistory (controlEditor, history) {
@@ -329,13 +371,17 @@ const createEventsHandler = parent => {
       if (type === 'key') {
         if (eventName === 'onkeydown') {
           if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-            return app.audio.state === 'running'
-              ? app.suspend()
-              : app.resume()
+            e.preventDefault()
+            if (app.audio.state === 'running') {
+              app.suspend()
+            } else {
+              app.resume()
+            }
+            return false
           } else if ((e.ctrlKey || e.metaKey) && e.key === '=') {
             e.preventDefault()
             addNewEditor().then(() => app.updateSizes())
-            return
+            return false
           } else if ((e.ctrlKey || e.metaKey) && e.key === '-') {
             e.preventDefault()
             const editor = events.targets.focus
@@ -347,13 +393,13 @@ const createEventsHandler = parent => {
                 addNewEditor().then(() => app.updateSizes())
               }
               events.targets = {}
-              app.waves.clearRect(0, 0, waves.width, waves.height)
-              app.waveforms.clearRect(0, 0, app.waveformsCanvas.width, app.waveformsCanvas.height)
+              // app.waves.clearRect(0, 0, waves.width, waves.height)
+              // app.waveforms.clearRect(0, 0, app.waveformsCanvas.width, app.waveformsCanvas.height)
               app.updateSizes()
               app.redrawWaves()
               app.storage.setItem('editors', JSON.stringify(Object.keys(app.editors)))
             }
-            return
+            return false
           } else if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
             e.preventDefault()
             const allEditors = Object.fromEntries(Object.values(app.editors).map(editor => {
@@ -375,7 +421,6 @@ const createEventsHandler = parent => {
             a.href = URL.createObjectURL(file)
             a.download = filename
             a.click()
-            return false
           } else if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
             e.preventDefault()
             const input = document.createElement('input')
@@ -398,12 +443,13 @@ const createEventsHandler = parent => {
                 app.editors = {}
                 events.targets = {}
                 await app.restoreState()
-                for (const editor of Object.values(app.controlEditors)) {
-                  editor.audio.start(app.clock.sync.bar)
-                }
+                // for (const editor of Object.values(app.controlEditors)) {
+                //   editor.audio.start(app.clock.sync.bar)
+                // }
               }
             }
             input.click()
+            return false
           }
         }
       }
@@ -498,17 +544,6 @@ const createEditor = async (data = {}) => {
   let selectionText = ''
   let history = { log: [null], needle: 1, lastNeedle: 1 }
 
-  const buffer = app.audio.createBuffer(
-    1,
-    app.clock.lengths.bar,
-    app.audio.sampleRate
-  )
-
-  const audio = app.audio.createBufferSource()
-  audio.buffer = buffer
-  audio.connect(app.gain)
-  audio.loop = true
-
   const createTextArea = e => {
     textarea = document.createElement('textarea')
     textarea.style.position = 'absolute'
@@ -579,6 +614,9 @@ const createEditor = async (data = {}) => {
   }
 
   app.updateSizes()
+
+  const worker = new Worker('./editor-worker.js', { type: 'module' })
+  worker.onerror = e => console.error(e)
   const canvas = document.createElement('canvas')
   const pixelRatio = window.devicePixelRatio
   canvas.width = app.editorWidth * pixelRatio
@@ -586,9 +624,6 @@ const createEditor = async (data = {}) => {
   canvas.style.width = `${app.editorWidth}px`
   canvas.style.height = `${app.editorHeight}px`
   canvases.appendChild(canvas)
-
-  const worker = new Worker('./editor-worker.js', { type: 'module' })
-  worker.onerror = e => console.error(e)
 
   let resolveReady
 
@@ -777,58 +812,10 @@ const createEditor = async (data = {}) => {
   rect.top += canvases.scrollTop
   rect.bottom += canvases.scrollTop
 
-  const wave = new OffscreenCanvas(170*2, 75*2)
-  wave.getContext('2d').scale(window.devicePixelRatio, window.devicePixelRatio)
-
-  const drawWaveForm = data => {
-    const ctx = wave.getContext('2d')
-    const width = ctx.canvas.width*2 // window.devicePixelRatio + 1
-    const height = 75
-    ctx.save()
-    ctx.fillStyle = '#000' //'#99ff00'
-    ctx.fillRect(0, 0, width, height)
-    // ctx.strokeStyle = '#a6e22e' //'#568208' //'#99ff00'
-    const color = 'rgba(215,255,105,0.46)'
-    const peak = '#f31'
-    ctx.lineWidth = .5
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.beginPath()
-    const y = height
-    const h = height / 2
-    const s = 32
-    ctx.moveTo(0, h)
-    const w = Math.floor(data.length / width)
-    for (let x = 0; x < width; x++) {
-      ctx.beginPath()
-      let max = Math.abs(Math.max(...data.slice(x*w, x*w+w)))
-      if (max > 1) {
-        ctx.strokeStyle = peak
-        max = 1
-      }
-      else ctx.strokeStyle = color
-
-      // let sum = 0
-      // for (let i = x*w; i < x*w+w; i += s) {
-        // sum += Math.abs(wave[i])
-      // }
-      // let avg = Math.min(1, (sum / (w / s) )) * h
-
-      ctx.moveTo(x/2/2, (h - (max * h)))
-      ctx.lineTo(x/2/2, (h + (max * h)))
-      ctx.stroke()
-    }
-    ctx.lineTo(width, h)
-    ctx.stroke()
-    ctx.restore()
-  }
-
   const editor = {
     ...data,
-    audio,
-    buffer,
+    changes: 0,
     canvas,
-    wave,
-    drawWaveForm,
     worker,
     history,
     handleEvent,
@@ -874,7 +861,13 @@ const events = createEventsHandler(window)
 
 waves.width = 170 * window.devicePixelRatio
 waves.height = window.innerHeight * window.devicePixelRatio
+waves.style.width = 170 + 'px'
 waves.style.height = window.innerHeight + 'px'
+
+lines.width = 170 * window.devicePixelRatio
+lines.height = window.innerHeight * window.devicePixelRatio
+lines.style.width = 170 + 'px'
+lines.style.height = window.innerHeight + 'px'
 // waves.getContext('2d').scale(window.devicePixelRatio, window.devicePixelRatio)
 
 // document.fonts.ready.then((fontFaceSet) => {
@@ -932,18 +925,19 @@ const addNewEditor = async () => {
   controlEditor.controlEditor = controlEditor
   await app.storeEditor(controlEditor)
   app.controlEditors[controlEditor.id] = controlEditor
-  controlEditor.audio.start(app.clock.sync.bar)
+  // controlEditor.audio.start(app.clock.sync.bar)
   await app.onchange(controlEditor)
   return controlEditor
 }
 
 const start = async () => {
   app.start()
+  app.suspend()
   singleGesture(() => {
-    app.resume()
-    for (const editor of Object.values(app.controlEditors)) {
-      editor.audio.start(app.clock.sync.bar)
-    }
+    app.suspend()
+    // for (const editor of Object.values(app.controlEditors)) {
+      // editor.audio.start(app.clock.sync.bar)
+    // }
   })
 
   await app.storage.init()

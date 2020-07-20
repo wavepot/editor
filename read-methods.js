@@ -11,12 +11,10 @@ onmessage = async ({ data: filename }) => {
   const module = await import(filename)
   const methods = Object.fromEntries(Object.entries(module)
     .map(([key, value]) => {
-      if (typeof value !== 'function') return
-
       return [key, {
         name: key,
         type: value.constructor.name,
-        code: value.toString()
+        value: value.toString()
       }]
     })
     .filter(Boolean))

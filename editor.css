@@ -31,14 +31,33 @@ html, body {
 }
 
 #container {
+  position: relative;
   display: flex;
   flex-flow: row nowrap;
 }
 
+#waveforms {
+  display: flex;
+  width: 340px;
+  height: 100%;
+}
+
 #waves {
   display: flex;
-  width: 170px;
+  width: 340px;
   height: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+#lines {
+  display: flex;
+  width: 340px;
+  height: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
 }
 
 #canvases {
