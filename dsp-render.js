@@ -41,7 +41,6 @@ export default (fn, context) => {
   }
 
   context.renderDuration = performance.now() / 1000 - context.renderStartTime
-  console.log('time to render', context.renderDuration)
 }
 
 const renderMono = (fn, context) => {

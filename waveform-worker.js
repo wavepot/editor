@@ -30,7 +30,6 @@ const worker = {
     this.animFrame = requestAnimationFrame(this.animTick)
   },
   createWaveform ({ id }) {
-    console.log('create waveform', id)
     if (id in this.waveforms) return
 
     const canvas = new OffscreenCanvas(
@@ -39,7 +38,11 @@ const worker = {
     )
     const ctx = canvas.getContext('2d')
     ctx.scale(this.pixelRatio, this.pixelRatio)
-    this.waveforms[id] = { canvas, ctx }
+    this.waveforms[id] = { canvas, ctx, volume: 1 }
+  },
+  setVolume ({ id, volume }) {
+    this.waveforms[id].volume = volume
+    this.animTick(false)
   },
   removeWaveform ({ id }) {
     // todo
@@ -53,7 +56,6 @@ const worker = {
       ctx.drawImage(waveform.canvas, 0, i * height)
       i++
     }
-    console.log('redraw waves', this.waveforms)
     this.ctx.outer.drawImage(this.canvas.inner, 0, 0)
     this.animTick(false)
   },
@@ -66,23 +68,29 @@ const worker = {
     ctx.clearRect(0, 0, this.canvas.lines.width, this.canvas.lines.height)
     // ctx.drawImage(this.canvas.inner, 0, 0)
     // ctx.save()
+    ctx.font = 'normal 12pt monospace'
+    ctx.textBaseline = 'top'
     ctx.lineWidth = this.pixelRatio
     ctx.strokeStyle = '#a2a2b2'
     const time = this.clock.time[0]
     let i = 0, x = 0
     for (const waveform of Object.values(this.waveforms)) {
       // ctx.drawImage(editor.wave, 0, i * height)
+      ctx.lineWidth = this.pixelRatio
+      ctx.strokeStyle = '#a2a2b2'
       ctx.beginPath()
       x = (( (time - waveform.syncTime) % (this.clock.bar * waveform.bars))
         / (this.clock.bar * waveform.bars)) * this.canvas.outer.width
       ctx.moveTo(x, 150 * i)
       ctx.lineTo(x, 150 * i + 150)
       ctx.stroke()
+
+      ctx.fillStyle = '#888'
+      ctx.fillText(waveform.volume.toFixed(2), 340 - 45, 5 + 150 * i)
       i++
     }
   },
   drawWaveform ({ id, data, syncTime, bars }) {
-    console.log('synctime', syncTime)
     this.waveforms[id].syncTime = syncTime
     this.waveforms[id].bars = bars
     const ctx = this.waveforms[id].ctx

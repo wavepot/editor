@@ -39,7 +39,7 @@ html, body {
 #waveforms {
   display: flex;
   width: 340px;
-  height: 100%;
+  height: 1vh;
 }
 
 #waves {

@@ -172,7 +172,7 @@ const app = window.app = {
 
       editor.audio = app.audio.createBufferSource()
       editor.audio.buffer = editor.buffer
-      editor.audio.connect(app.gain)
+      editor.audio.connect(editor.gain)
       editor.audio.loop = true
 
       editor.sharedBuffer = new SharedBuffer(
@@ -351,11 +351,11 @@ const app = window.app = {
   },
 }
 
-const isWithin = (e, { left, top, right, bottom }) => {
-  left -= canvases.scrollLeft
-  right -= canvases.scrollLeft
-  top -= canvases.scrollTop
-  bottom -= canvases.scrollTop
+const isWithin = (e, { left, top, right, bottom, parent }) => {
+  left -= parent.scrollLeft
+  right -= parent.scrollLeft
+  top -= parent.scrollTop
+  bottom -= parent.scrollTop
   if ((e.clientX ?? e.pageX) >= left && (e.clientX ?? e.pageX) <= right
   && (e.clientY ?? e.pageY) >= top && (e.clientY ?? e.pageY) <= bottom) {
     return true
@@ -421,6 +421,7 @@ const createEventsHandler = parent => {
             a.href = URL.createObjectURL(file)
             a.download = filename
             a.click()
+            return false
           } else if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
             e.preventDefault()
             const input = document.createElement('input')
@@ -815,14 +816,20 @@ const createEditor = async (data = {}) => {
   const editor = {
     ...data,
     changes: 0,
+    volume: 1.0,
     canvas,
     worker,
     history,
     handleEvent,
     updateHistory,
     undoCurrentHistory,
+    parent: canvases,
     ...rect
   }
+
+  editor.gain = app.audio.createGain()
+  editor.gain.gain.value = editor.volume
+  editor.gain.connect(app.gain)
 
   editor.destroy = () => {
     try { editor.worker.terminate() } catch (err) {
@@ -868,47 +875,37 @@ lines.width = 170 * window.devicePixelRatio
 lines.height = window.innerHeight * window.devicePixelRatio
 lines.style.width = 170 + 'px'
 lines.style.height = window.innerHeight + 'px'
-// waves.getContext('2d').scale(window.devicePixelRatio, window.devicePixelRatio)
 
-// document.fonts.ready.then((fontFaceSet) => {
-  // console.log(fontFaceSet.size)
-    // console.log(fontFaceSet.size, 'FontFaces loaded.');
-    // document.getElementById('waitScreen').style.display = 'none';
-  // create(window.innerWidth - 260, 200)
-  // create(window.innerWidth, 200)
-  // create(200, 200, true)
-  // create(300, window.innerHeight)
-  // create(300, window.innerHeight)
-  // create(300, window.innerHeight)
-// create(window.innerWidth-170, window.innerHeight-30, true)
-// create(window.innerWidth/3, window.innerHeight-30, true)
-// create(window.innerWidth/3, window.innerHeight-30, true)
-// create(window.innerWidth/3, window.innerHeight-30, true)
-// create(window.innerWidth/3, window.innerHeight-30, true)
-// create(window.innerWidth/4, window.innerHeight-30, true)
-// create(window.innerWidth/4, window.innerHeight-30, true)
-// create(window.innerWidth/4, window.innerHeight-30, true)
-// create(window.innerWidth/4, window.innerHeight-30, true)
-// create(window.innerWidth/4, window.innerHeight-30, true)
-// create(window.innerWidth/4, window.innerHeight-30, true)
-// create(window.innerWidth/5, window.innerHeight, true)
-// create(window.innerWidth/5, window.innerHeight, true)
-// create(window.innerWidth/5, window.innerHeight, true)
-  // for (let i = 0; i < 40; i++) create(70, 70)
-// });
-// waves.style.width = '170px'
-
-// const targets = editors.map(editor => ({
-//   el: editor,
-//   ...editor.canvas.getBoundingClientRect().toJSON()
-// }))
+const waveforms = {
+  parent: { scrollLeft: 0, scrollTop: 0 },
+  ...document.getElementById('waveforms').getBoundingClientRect().toJSON(),
+  bottom: 10000,
+  handleEvent (type, eventName, e) {
+    if (eventName === 'onmousewheel') {
+      const targetIndex = Math.floor((e.clientY || e.pageY) / 75)
+      const targetEditor = Object.values(app.controlEditors)[targetIndex]
+      if (targetEditor) {
+        const currValue = targetEditor.volume
+        const targetValue = Math.min(1, Math.max(0, currValue + Math.sign(e.deltaY) * 0.01))
+        targetEditor.volume = targetValue
+        targetEditor.gain.gain.linearRampToValueAtTime(targetValue, app.audio.currentTime + 0.01)
+        app.waveformWorker.postMessage({
+          call: 'setVolume',
+          id: targetEditor.id,
+          volume: targetEditor.volume
+        })
+      }
+    }
+  }
+}
 
 const targetHandler = type => e => {
   if (ignore) return
   let _target = null
-  Object.values(app.controlEditors).forEach(target => {
+  ;[...Object.values(app.controlEditors), waveforms].forEach(target => {
     if (isWithin(e, target)) _target = target
   })
+  // if (!_target && (e.clientX || e.pageX) < 170) _target = waveforms
   events.setTarget(type, _target, e)
 }
 
