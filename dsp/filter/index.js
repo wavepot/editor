@@ -10,7 +10,7 @@
  * @license mit
  */
 
-import prewarp from '../prewarp/index.js';
+import prewarp from '../prewarp.js'
 
 export default OnePoleFilter;
 
@@ -24,8 +24,9 @@ function OnePoleFilter(type){
   this.fc = 200;
   this.a = 1;
   this.b = 1;
-  this.reset();
-  this.update();
+  this.z1 = 0
+  // this.reset();
+  // this.update();
 }
 
 OnePoleFilter.prototype.reset = function(){
@@ -36,8 +37,8 @@ OnePoleFilter.prototype.getFeedbackOutput = function(){
   return this.z1 * this.b;
 };
 
-OnePoleFilter.prototype.update = function(){
-  var wa = prewarp(this.fc);
+OnePoleFilter.prototype.update = function(t){
+  var wa = prewarp(t, this.fc);
   this.a = wa / (1.0 + wa);
 };
 

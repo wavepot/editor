@@ -1,3 +1,4 @@
+import Moogladder from './dsp/moogladder.js'
 import dateId from './lib/date-id.js'
 import randomId from './lib/random-id.js'
 import Clock from './clock.js'
@@ -925,7 +926,7 @@ const waveforms = {
 const targetHandler = type => e => {
   if (ignore) return
   let _target = null
-  const targets = [...Object.values(app.controlEditors), waveforms]
+  const targets = [waveforms, ...Object.values(app.controlEditors)]
   for (const target of targets) {
     if (isWithin(e, target)) {
       _target = target
@@ -974,12 +975,25 @@ const start = async () => {
     console.error('Error restoring state')
     console.error(err)
     console.log('Starting new session')
-    const demo = await (await fetch('/demo.js')).text()
-    const controlEditor = await createEditor({ title: 'demo', value: demo })
-    controlEditor.controlEditor = controlEditor
-    await app.storeEditor(controlEditor)
-    app.controlEditors[controlEditor.id] = controlEditor
-    await app.onchange(controlEditor)
+    const result = await (await fetch('/saves/demo.json')).text()
+
+    const fullState = JSON.parse(result)
+    for (const [key, value] of Object.entries(fullState)) {
+      await app.storage.setItem(key, value)
+    }
+    for (const editor of Object.values(app.controlEditors)) {
+      editor.destroy()
+    }
+    app.controlEditors = {}
+    app.editors = {}
+    events.targets = {}
+    await app.restoreState()
+
+    // const controlEditor = await createEditor({ title: 'demo', value: demo })
+    // controlEditor.controlEditor = controlEditor
+    // await app.storeEditor(controlEditor)
+    // app.controlEditors[controlEditor.id] = controlEditor
+    // await app.onchange(controlEditor)
   }
 }
 

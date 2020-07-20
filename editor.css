@@ -38,13 +38,14 @@ html, body {
 
 #waveforms {
   display: flex;
-  width: 340px;
+  width: 170px;
+  min-width: 170px;
   height: 1vh;
 }
 
 #waves {
   display: flex;
-  width: 340px;
+  width: 170px;
   height: 100%;
   position: absolute;
   left: 0;
@@ -53,7 +54,7 @@ html, body {
 
 #lines {
   display: flex;
-  width: 340px;
+  width: 170px;
   height: 100%;
   position: absolute;
   left: 0;
