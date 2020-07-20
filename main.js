@@ -497,6 +497,7 @@ const createEventsHandler = parent => {
     'onblur',
     'onfocus',
     'onresize',
+    'oncontextmenu',
   ].map(handlerMapper(window, 'window'))
 
   return {
@@ -881,14 +882,36 @@ const waveforms = {
   ...document.getElementById('waveforms').getBoundingClientRect().toJSON(),
   bottom: 10000,
   handleEvent (type, eventName, e) {
+    const targetIndex = Math.floor((e.clientY || e.pageY) / 75)
+    if (eventName === 'onmousedown') {
+      e.preventDefault()
+      const time = app.audio.currentTime + 0.05
+      if (e.which === 1) {
+        Object.values(app.controlEditors)[targetIndex].gain.gain.linearRampToValueAtTime(0, time)
+      }
+      if (e.which === 3) {
+        for (const [i, editor] of Object.values(app.controlEditors).entries()) {
+          if (i === targetIndex) continue
+          editor.gain.gain.linearRampToValueAtTime(0, time)
+        }
+      }
+    }
+    if (eventName === 'onmouseup') {
+      const time = app.audio.currentTime + 0.05
+      for (const editor of Object.values(app.controlEditors)) {
+        editor.gain.gain.linearRampToValueAtTime(editor.volume, time)
+      }
+    }
+    if (eventName === 'oncontextmenu') {
+      e.preventDefault()
+    }
     if (eventName === 'onmousewheel') {
-      const targetIndex = Math.floor((e.clientY || e.pageY) / 75)
       const targetEditor = Object.values(app.controlEditors)[targetIndex]
       if (targetEditor) {
         const currValue = targetEditor.volume
-        const targetValue = Math.min(1, Math.max(0, currValue + Math.sign(e.deltaY) * 0.01))
+        const targetValue = Math.min(1, Math.max(0, currValue + (e.deltaY/40) * 0.01))
         targetEditor.volume = targetValue
-        targetEditor.gain.gain.linearRampToValueAtTime(targetValue, app.audio.currentTime + 0.01)
+        targetEditor.gain.gain.linearRampToValueAtTime(targetValue, app.audio.currentTime + 0.05)
         app.waveformWorker.postMessage({
           call: 'setVolume',
           id: targetEditor.id,
@@ -902,9 +925,13 @@ const waveforms = {
 const targetHandler = type => e => {
   if (ignore) return
   let _target = null
-  ;[...Object.values(app.controlEditors), waveforms].forEach(target => {
-    if (isWithin(e, target)) _target = target
-  })
+  const targets = [...Object.values(app.controlEditors), waveforms]
+  for (const target of targets) {
+    if (isWithin(e, target)) {
+      _target = target
+      break
+    }
+  }
   // if (!_target && (e.clientX || e.pageX) < 170) _target = waveforms
   events.setTarget(type, _target, e)
 }
@@ -931,7 +958,9 @@ const start = async () => {
   app.start()
   app.suspend()
   singleGesture(() => {
-    app.suspend()
+    if (app.audio.state !== 'running') {
+      app.suspend()
+    }
     // for (const editor of Object.values(app.controlEditors)) {
       // editor.audio.start(app.clock.sync.bar)
     // }
