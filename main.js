@@ -17,13 +17,14 @@ const app = window.app = {
   bpm: 140,
   scripts: {},
   editors: {},
+  infinites: {},
   controlEditors: {},
   editorWidth: window.innerWidth - 170,
   editorHeight: window.innerHeight - 30,
   storage: new Storage,
   cache: new DynamicCache('wavepot', { 'Content-Type': 'application/javascript' }),
   updateSizes () {
-    app.editorWidth = ((window.innerWidth - 170) / Math.max(1, Math.min(2, Object.keys(app.controlEditors).length)))
+    app.editorWidth = Math.max(520, ((window.innerWidth - 170) / Math.max(1, Math.min(2, Object.keys(app.controlEditors).length))))
     app.editorHeight = window.innerHeight - 30
     for (const editor of Object.values(app.controlEditors)) {
       editor.canvas.style.width = app.editorWidth + 'px'
@@ -89,8 +90,51 @@ const app = window.app = {
     cancelAnimationFrame(app.animFrame)
     app.waveformWorker.postMessage({ call: 'suspend' })
   },
-  onbar () {
-    // console.log('bar')
+  async onbar () {
+    // clear expired infinites
+    for (const editor of Object.values(app.infinites)) {
+      if (!editor.infinite || !editor.renderWorker) {
+        delete app.infinites[editor.id]
+      } else {
+        editor.renderWorker.context.handle = false
+      }
+    }
+
+    await Promise.all(Object.values(app.infinites).map(editor => app.render(editor.renderWorker)))
+
+    for (const editor of Object.values(app.infinites)) {
+      if (!editor.renderWorker) continue
+
+      const prevAudio = editor.audio
+
+      editor.buffer = app.audio.createBuffer(
+        editor.channels,
+        editor.bars * app.clock.lengths.bar,
+        app.audio.sampleRate
+      )
+
+      editor.audio = app.audio.createBufferSource()
+      editor.audio.buffer = editor.buffer
+      editor.audio.connect(editor.gain)
+      editor.audio.loop = true
+
+      const { output } = editor.renderWorker.context
+      for (const [i, data] of output.entries()) {
+        editor.buffer.getChannelData(i).set(data)
+      }
+      const syncTime = app.clock.sync.bar
+      prevAudio.stop(syncTime)
+      editor.syncTime = syncTime
+      editor.audio.start(syncTime)
+
+      app.waveformWorker.postMessage({
+        call: 'drawWaveform',
+        id: editor.id,
+        syncTime: editor.syncTime,
+        bars: editor.bars,
+        data: output[0]
+      })
+    }
   },
   redrawWaves () {
     app.waveformWorker.postMessage({ call: 'redrawWaves' })
@@ -133,7 +177,7 @@ const app = window.app = {
   //   ctx.stroke()
   // },
   async onchange (editor) {
-    console.log('changed', editor)
+    console.log('changed', editor.title)
     editor = Object.assign(app.controlEditors[editor.id], editor)
     editor.changes++
     app.waveformWorker.postMessage({ call: 'createWaveform', id: editor.id })
@@ -148,6 +192,7 @@ const app = window.app = {
     if (editor.buffer && (
       (methods.bars && editor.bars !== Number(methods.bars?.value))
     || (methods.channels && editor.channels !== Number(methods.channels?.value))
+    || editor.infinite
     )) {
       prevAudio = editor.audio
       editor.buffer = null
@@ -164,6 +209,9 @@ const app = window.app = {
     let newAudio
     if (!editor.buffer) {
       newAudio = true
+
+      editor.infinite = editor.bars === Infinity
+      editor.bars = editor.infinite ? 1 : editor.bars
 
       editor.buffer = app.audio.createBuffer(
         editor.channels,
@@ -182,6 +230,7 @@ const app = window.app = {
       )
 
       if (editor.renderWorker) {
+        editor.n = editor.renderWorker.context.n
         console.log(editor.title, ': terminate previous worker')
         editor.renderWorker.terminate()
       }
@@ -217,7 +266,14 @@ const app = window.app = {
       console.log(editor.title, ': terminate previous worker')
       editor.renderWorker.terminate()
     }
-    editor.renderWorker = worker
+    if (editor.infinite) {
+      console.log(editor.title, ': keep worker infinitely alive')
+      editor.renderWorker = worker
+      app.infinites[editor.id] = editor
+    } else {
+      console.log(editor.title, ': terminate worker complete')
+      worker.terminate()
+    }
     editor.changes--
   },
   async renderEditor (editor, bar = 0) {
@@ -237,6 +293,10 @@ const app = window.app = {
       sampleRate: app.audioContext.sampleRate,
       output: editor.sharedBuffer.output
     })
+
+    if (editor.infinite && editor.n) {
+      worker.context.n = editor.n
+    }
 
     await app.setup(worker)
     await app.render(worker)
