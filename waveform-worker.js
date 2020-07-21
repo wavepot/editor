@@ -86,13 +86,15 @@ const worker = {
       ctx.stroke()
 
       ctx.fillStyle = '#888'
+      ctx.fillText(waveform.title, 5, 5 + 150 * i)
       ctx.fillText(waveform.volume.toFixed(2), 340 - 45, 5 + 150 * i)
       i++
     }
   },
-  drawWaveform ({ id, data, syncTime, bars }) {
+  drawWaveform ({ id, title, data, syncTime, bars }) {
     this.waveforms[id].syncTime = syncTime
     this.waveforms[id].bars = bars
+    this.waveforms[id].title = title
     const ctx = this.waveforms[id].ctx
     const width = 170 * this.pixelRatio*2 // window.devicePixelRatio + 1
     const height = 75

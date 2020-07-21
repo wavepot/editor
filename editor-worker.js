@@ -231,6 +231,18 @@ class Editor {
     this.draw()
   }
 
+  renameEditor ({ id, title }) {
+    if (id === this.id) {
+      this.title = title
+    } else {
+      this.subEditors
+        .find(editor => editor.id === id)
+        .title = title
+    }
+    this.updateSizes(true)
+    this.draw()
+  }
+
   restoreHistory (history) {
     const editors = {}
     editors[this.id] = this
@@ -1677,6 +1689,10 @@ class Editor {
     if (editor !== this.focusedEditor) {
       this.focusedEditor?.onblur()
       this.focusedEditor = editor
+      postMessage({
+        call: 'onfocus',
+        id: editor.id
+      })
     }
     editor.onfocus()
     editor.updateSizes()

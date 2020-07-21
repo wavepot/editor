@@ -8,6 +8,7 @@ import SharedBuffer from './shared-buffer.js'
 import singleGesture from './lib/single-gesture.js'
 import readMethods from './read-methods.js'
 import DynamicCache from './dynamic-cache.js'
+import ask from './lib/prompt.js'
 
 DynamicCache.install()
 
@@ -130,6 +131,7 @@ const app = window.app = {
       app.waveformWorker.postMessage({
         call: 'drawWaveform',
         id: editor.id,
+        title: editor.title,
         syncTime: editor.syncTime,
         bars: editor.bars,
         data: output[0]
@@ -262,6 +264,7 @@ const app = window.app = {
     app.waveformWorker.postMessage({
       call: 'drawWaveform',
       id: editor.id,
+      title: editor.title,
       syncTime: editor.syncTime,
       bars: editor.bars,
       data: output[0]
@@ -348,7 +351,8 @@ const app = window.app = {
   },
   async saveEditor (editor) {
     app.editors[editor.id] = editor
-    return await app.cache.put(editor.controlEditor.title + '/' + editor.title, editor.value)
+    const controlEditor = app.editors[editor.controlEditor.id] || app.controlEditors[editor.controlEditor.id]
+    return await app.cache.put(controlEditor.title + '/' + editor.title, editor.value)
   },
   async storeEditor (editor) {
     app.editors[editor.id] = editor
@@ -357,8 +361,7 @@ const app = window.app = {
       title: editor.title,
       value: editor.value,
       controlEditor: {
-        id: editor.controlEditor.id,
-        title: editor.controlEditor.title
+        id: editor.controlEditor.id
       }
     }))
     await app.storage.setItem('editors', JSON.stringify(Object.keys(app.editors)))
@@ -370,7 +373,11 @@ const app = window.app = {
     const editors = JSON.parse(await app.storage.getItem('editors'))
     for (const id of editors.values()) {
       const editor = JSON.parse(await app.storage.getItem('editor_' + id))
+      if (!editor.value.trim()) continue
       app.editors[id] = editor
+    }
+
+    for (const editor of Object.values(app.editors)) {
       await app.saveEditor(editor)
     }
 
@@ -493,6 +500,25 @@ const createEventsHandler = parent => {
             a.href = URL.createObjectURL(file)
             a.download = filename
             a.click()
+            return false
+          } else if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
+            e.preventDefault()
+            const editor = app.editors[events.targets.focus?.focusedEditor]
+            if (editor) {
+              ask('Change name', `Type a new name for "${editor.title}"`, editor.title).then(async (result) => {
+                if (!result) return
+                editor.title = result.value
+                await app.storeEditor(editor)
+                await app.saveEditor(editor)
+                app.controlEditors[editor.controlEditor.id].worker
+                  .postMessage({
+                    call: 'renameEditor',
+                    id: editor.id,
+                    title: editor.title
+                  })
+                app.updateSizes()
+              })
+            }
             return false
           } else if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
             e.preventDefault()
@@ -734,6 +760,9 @@ const createEditor = async (data = {}) => {
       }
 
       app.storeHistory(editor, history)
+    },
+    onfocus ({ id }) {
+      app.controlEditors[data.id].focusedEditor = id
     },
     onselection ({ text }) {
       if (textarea) {
@@ -1033,7 +1062,7 @@ const addSubEditor = async (parentEditor) => {
     id,
     title: 'untitled-' + id,
     value: template,
-    controlEditor: { id: parentEditor.id, title: parentEditor.title }
+    controlEditor: { id: parentEditor.id }
   }
   parentEditor.worker.postMessage({
     call: 'addSubEditor',
