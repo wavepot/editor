@@ -53,7 +53,7 @@ const proto = {
   },
   put: {
     value (data) {
-      Object.assign(this, data)
+      return Object.assign(this, data)
     }
   },
   toJSON: {
@@ -73,11 +73,14 @@ const proto = {
 }
 
 const Context = (data) => {
+  let context = data
   const mix = (...fns) => {
     const n = data.n
     mix.handle = true
     for (const fn of fns) {
-      render(fn, Context(data))
+      context = Context(data).put(context)
+      context.handle = false
+      render(fn, context)
     }
   }
 

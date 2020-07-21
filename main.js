@@ -178,6 +178,11 @@ const app = window.app = {
   // },
   async onchange (editor) {
     console.log('changed', editor.title)
+    if (!(editor.id in app.controlEditors)) {
+      await app.storeEditor(editor)
+      const filename = await app.saveEditor(editor)
+      editor = app.controlEditors[editor.controlEditor.id]
+    }
     editor = Object.assign(app.controlEditors[editor.id], editor)
     editor.changes++
     app.waveformWorker.postMessage({ call: 'createWaveform', id: editor.id })
@@ -459,6 +464,12 @@ const createEventsHandler = parent => {
               app.updateSizes()
               app.redrawWaves()
               app.storage.setItem('editors', JSON.stringify(Object.keys(app.editors)))
+            }
+            return false
+          } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '>') {
+            e.preventDefault()
+            if (events.targets.focus && events.targets.focus.id) {
+              addSubEditor(events.targets.focus)
             }
             return false
           } else if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
@@ -1013,6 +1024,24 @@ const addNewEditor = async () => {
   // controlEditor.audio.start(app.clock.sync.bar)
   await app.onchange(controlEditor)
   return controlEditor
+}
+
+const addSubEditor = async (parentEditor) => {
+  const template = await (await fetch('/empty.js')).text()
+  const id = randomId()
+  const editor = {
+    id,
+    title: 'untitled-' + id,
+    value: template,
+    controlEditor: { id: parentEditor.id, title: parentEditor.title }
+  }
+  parentEditor.worker.postMessage({
+    call: 'addSubEditor',
+    ...editor
+  })
+  await app.storeEditor(editor)
+  await app.onchange(editor)
+  return editor
 }
 
 const start = async () => {
