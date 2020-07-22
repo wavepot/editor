@@ -16,6 +16,7 @@ let ignore = true
 
 const app = window.app = {
   bpm: 140,
+  samples: {},
   scripts: {},
   editors: {},
   infinites: {},
@@ -137,6 +138,19 @@ const app = window.app = {
         data: output[0]
       })
     }
+  },
+  async onfetchsample (worker, { url }) {
+    console.log('fetching sample', url)
+    const path = '.' === url[0]
+      ? url.split('/').slice(1,-1).join('/') + '/' + encodeURIComponent(url.split('/').pop())
+      : url
+
+    const sample = app.samples[url] = app.samples[url] ??
+      (await app.audio.decodeAudioData(
+        await (await fetch(path)).arrayBuffer()
+      )).getChannelData(0)
+
+    worker.postMessage({ call: 'callback', id: url, data: sample })
   },
   redrawWaves () {
     app.waveformWorker.postMessage({ call: 'redrawWaves' })
@@ -556,17 +570,17 @@ const createEventsHandler = parent => {
         if (eventName === 'onmouseup') targets.forceWithin = null
         if (eventName === 'onmousedown') targets.forceWithin = targets.hover
         if (targets.forceWithin) {
-          return targets.forceWithin.handleEvent(type, eventName, e)
+          return targets.forceWithin.handleEvent?.(type, eventName, e)
         }
         if (targets.hover && isWithin(e, targets.hover)) {
-          return targets.hover.handleEvent(type, eventName, e)
+          return targets.hover.handleEvent?.(type, eventName, e)
         }
       } else if (targets.focus) {
-        return targets.focus.handleEvent(type, eventName, e)
+        return targets.focus.handleEvent?.(type, eventName, e)
       }
       if (type === 'window') {
         for (const editor of Object.values(app.editors)) {
-          editor.handleEvent(type, eventName, e)
+          editor.handleEvent?.(type, eventName, e)
         }
       }
     }

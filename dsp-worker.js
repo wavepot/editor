@@ -7,7 +7,7 @@ const worker = self.worker = {
 
   callbacks: {},
 
-  oncallback ({ id, data }) {
+  callback ({ id, data }) {
     this.callbacks[id](data)
   },
 
