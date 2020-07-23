@@ -144,7 +144,6 @@ const app = window.app = {
     }
 
     {
-      console.log('rendering main...')
       const editor = app.controlEditors.main
       const prevAudio = editor.audio
 
@@ -174,11 +173,8 @@ const app = window.app = {
           console.error(err)
         }
       }
-      // if (newAudio) {
-        editor.syncTime = syncTime
-        editor.audio.start(syncTime)
-      // }
-      console.log('should play main')
+      editor.syncTime = syncTime
+      editor.audio.start(syncTime)
     }
 
   },
@@ -275,6 +271,7 @@ const app = window.app = {
     app.mainContext.channels = editor.channels
     app.mainContext.lengths = app.clock.lengths
     app.mainContext.totalLength = app.clock.lengths.bar * editor.bars
+    app.mainContext.sampleRate = app.audio.sampleRate
     app.mainContext.output = editor.sharedBuffer.output
     await app.setup(worker)
     editor.renderWorker = worker
