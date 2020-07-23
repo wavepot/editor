@@ -21,6 +21,7 @@ const app = window.app = {
   editors: {},
   infinites: {},
   controlEditors: {},
+  mainContext: Context({ buffers: {} }),
   editorWidth: window.innerWidth - 170,
   editorHeight: window.innerHeight - 30,
   storage: new Storage,
@@ -107,27 +108,30 @@ const app = window.app = {
     for (const editor of Object.values(app.infinites)) {
       if (!editor.renderWorker) continue
 
-      const prevAudio = editor.audio
+      // const prevAudio = editor.audio
 
-      editor.buffer = app.audio.createBuffer(
-        editor.channels,
-        editor.bars * app.clock.lengths.bar,
-        app.audio.sampleRate
-      )
+      // editor.buffer = app.audio.createBuffer(
+      //   editor.channels,
+      //   editor.bars * app.clock.lengths.bar,
+      //   app.audio.sampleRate
+      // )
 
-      editor.audio = app.audio.createBufferSource()
-      editor.audio.buffer = editor.buffer
-      editor.audio.connect(editor.gain)
-      editor.audio.loop = true
+      // editor.audio = app.audio.createBufferSource()
+      // editor.audio.buffer = editor.buffer
+      // editor.audio.connect(editor.gain)
+      // editor.audio.loop = true
 
       const { output } = editor.renderWorker.context
-      for (const [i, data] of output.entries()) {
-        editor.buffer.getChannelData(i).set(data)
-      }
-      const syncTime = app.clock.sync.bar
-      prevAudio.stop(syncTime)
-      editor.syncTime = syncTime
-      editor.audio.start(syncTime)
+
+      app.mainContext.buffers[editor.title] = output
+
+      // for (const [i, data] of output.entries()) {
+      //   editor.buffer.getChannelData(i).set(data)
+      // }
+      // const syncTime = app.clock.sync.bar
+      // prevAudio.stop(syncTime)
+      // editor.syncTime = syncTime
+      // editor.audio.start(syncTime)
 
       app.waveformWorker.postMessage({
         call: 'drawWaveform',
@@ -138,6 +142,45 @@ const app = window.app = {
         data: output[0]
       })
     }
+
+    {
+      console.log('rendering main...')
+      const editor = app.controlEditors.main
+      const prevAudio = editor.audio
+
+      editor.buffer = app.audio.createBuffer(
+        editor.channels,
+        editor.bars * app.clock.n.bar,
+        app.audio.sampleRate
+      )
+
+      editor.audio = app.audio.createBufferSource()
+      editor.audio.buffer = editor.buffer
+      editor.audio.connect(editor.gain)
+      editor.audio.loop = true
+
+      await app.render(editor.renderWorker)
+
+      const { output } = editor.renderWorker.context
+
+      for (const [i, data] of output.entries()) {
+        editor.buffer.getChannelData(i).set(data)
+      }
+      const syncTime = app.clock.sync.bar
+      if (prevAudio) {
+        try {
+          prevAudio.stop(syncTime)
+        } catch (err) {
+          console.error(err)
+        }
+      }
+      // if (newAudio) {
+        editor.syncTime = syncTime
+        editor.audio.start(syncTime)
+      // }
+      console.log('should play main')
+    }
+
   },
   async onfetchsample (worker, { url }) {
     console.log('fetching sample', url)
@@ -192,6 +235,50 @@ const app = window.app = {
   //   ctx.lineTo(width, height)
   //   ctx.stroke()
   // },
+  async onchangemain () {
+    const editor = app.controlEditors.main
+
+    await app.storeEditor(editor)
+    const filename = await app.saveEditor(editor)
+    const methods = await readMethods(filename)
+    if (!methods.default) {
+      throw new Error('Render Error: no `export default` found')
+    }
+
+    Object.assign(editor, {
+      filename,
+      method: methods.default,
+      bars: 1,
+      channels: 2
+    })
+
+    if (!editor.sharedBuffer) {
+      editor.sharedBuffer = new SharedBuffer(
+        editor.channels,
+        editor.bars * app.clock.n.bar
+      )
+      if (editor.renderWorker) {
+        editor.n = editor.renderWorker.context.n
+        console.log(editor.title, ': terminate previous worker')
+        editor.renderWorker.terminate()
+      }
+      delete editor.renderWorker
+    }
+
+    const worker = new Worker('./dsp-worker.js', { type: 'module' })
+    worker.onerror = e => console.error(e)
+    worker.onmessage = ({ data }) => app[data.call](worker, data)
+    const ctx = worker.context = app.mainContext
+    app.mainContext.filename = editor.filename
+    app.mainContext.method = editor.method
+    app.mainContext.bars = editor.bars
+    app.mainContext.channels = editor.channels
+    app.mainContext.lengths = app.clock.lengths
+    app.mainContext.totalLength = app.clock.lengths.bar * editor.bars
+    app.mainContext.output = editor.sharedBuffer.output
+    await app.setup(worker)
+    editor.renderWorker = worker
+  },
   async onchange (editor) {
     console.log('changed', editor.title)
     if (!(editor.id in app.controlEditors)) {
@@ -200,6 +287,8 @@ const app = window.app = {
       editor = app.controlEditors[editor.controlEditor.id]
     }
     editor = Object.assign(app.controlEditors[editor.id], editor)
+    if (editor.id === 'main') return app.onchangemain()
+
     editor.changes++
     app.waveformWorker.postMessage({ call: 'createWaveform', id: editor.id })
     await app.storeEditor(editor)
@@ -209,15 +298,16 @@ const app = window.app = {
       throw new Error('Render Error: no `export default` found')
     }
 
-    let prevAudio
-    if (editor.buffer && (
+    // let prevAudio
+    if (editor.sharedBuffer && (
       (methods.bars && editor.bars !== Number(methods.bars?.value))
     || (methods.channels && editor.channels !== Number(methods.channels?.value))
     || editor.infinite
     )) {
-      prevAudio = editor.audio
-      editor.buffer = null
-      editor.audio = null
+      editor.sharedBuffer = null
+      // prevAudio = editor.audio
+      // editor.buffer = null
+      // editor.audio = null
     }
 
     Object.assign(editor, {
@@ -227,27 +317,27 @@ const app = window.app = {
       channels: Number(methods.channels?.value ?? 1)
     })
 
-    let newAudio
-    if (!editor.buffer) {
-      newAudio = true
+    // let newAudio
+    if (!editor.sharedBuffer) {
+      // newAudio = true
 
       editor.infinite = editor.bars === Infinity
       editor.bars = editor.infinite ? 1 : editor.bars
 
-      editor.buffer = app.audio.createBuffer(
-        editor.channels,
-        editor.bars * app.clock.lengths.bar,
-        app.audio.sampleRate
-      )
+      // editor.buffer = app.audio.createBuffer(
+      //   editor.channels,
+      //   editor.bars * app.clock.lengths.bar,
+      //   app.audio.sampleRate
+      // )
 
-      editor.audio = app.audio.createBufferSource()
-      editor.audio.buffer = editor.buffer
-      editor.audio.connect(editor.gain)
-      editor.audio.loop = true
+      // editor.audio = app.audio.createBufferSource()
+      // editor.audio.buffer = editor.buffer
+      // editor.audio.connect(editor.gain)
+      // editor.audio.loop = true
 
       editor.sharedBuffer = new SharedBuffer(
         editor.channels,
-        editor.buffer.length
+        editor.bars * app.clock.n.bar
       )
 
       if (editor.renderWorker) {
@@ -260,21 +350,23 @@ const app = window.app = {
 
     const worker = await app.renderEditor(editor)
     const { output } = worker.context
-    for (const [i, data] of output.entries()) {
-      editor.buffer.getChannelData(i).set(data)
-    }
-    const syncTime = app.clock.sync.bar
-    if (prevAudio) {
-      try {
-        prevAudio.stop(syncTime)
-      } catch (err) {
-        console.error(err)
-      }
-    }
-    if (newAudio) {
-      editor.syncTime = syncTime
-      editor.audio.start(syncTime)
-    }
+    app.mainContext.buffers[editor.title] = output
+
+    // for (const [i, data] of output.entries()) {
+    //   editor.buffer.getChannelData(i).set(data)
+    // }
+    // const syncTime = app.clock.sync.bar
+    // if (prevAudio) {
+    //   try {
+    //     prevAudio.stop(syncTime)
+    //   } catch (err) {
+    //     console.error(err)
+    //   }
+    // }
+    // if (newAudio) {
+    //   editor.syncTime = syncTime
+    //   editor.audio.start(syncTime)
+    // }
     app.waveformWorker.postMessage({
       call: 'drawWaveform',
       id: editor.id,
@@ -948,13 +1040,13 @@ const createEditor = async (data = {}) => {
   editor.gain.connect(app.gain)
 
   editor.destroy = () => {
-    try { editor.worker.terminate() } catch (err) {
+    try { editor?.worker?.terminate() } catch (err) {
       console.error('Error terminating editor worker [' + editor.id + '] ' + editor.title)
     }
-    try { editor.renderWorker.terminate() } catch (err) {
+    try { editor?.renderWorker?.terminate() } catch (err) {
       console.error('Error terminating render worker [' + editor.id + '] ' + editor.title)
     }
-    try { editor.audio.disconnect() } catch (err) {
+    try { editor?.audio?.disconnect() } catch (err) {
       console.error('Error disconnecting audio [' + editor.id + '] ' + editor.title)
     }
     try { editor.undoCurrentHistory() } catch (err) {
