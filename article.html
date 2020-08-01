@@ -1,0 +1,343 @@
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Work+Sans:ital,wght@0,400;0,500;1,400;1,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./article.css">
+</head>
+<body>
+<article>
+<!--
+<h1>
+making a <b>TECHNO</b> track
+<br>
+from <strong>Scratch</strong>
+</h1>
+
+<p>In this article we will work our way to a viable <em>Techno</em> music track, using basic <strong>first principles</strong> and in the process we will learn about subjects like <em>acoustics</em> and <em>psychoacoustics</em>, <em>sound synthesis</em>, <em>rhythmic</em> and <em>harmonic</em> composition and arrangement, <em>mixing techniques</em> and we'll finally produce something that we can <em>dance to</em> and <em>enjoy!</em>
+<br>
+<br>
+And all of this using just coding, and specifically, <strong>JavaScript</strong>.
+Feeling intrigued yet? Follow me...</p>
+
+<h2>The Kick</h2>
+
+<p>Every good Techno track starts with a <strong>Kick</strong>. But what <em>is</em> a kick, <em>really?</em> According to Wikipedia:
+</p>
+<blockquote>
+  The bass drum, or kick drum, is a large drum that produces a note of low definite or indefinite pitch
+  <br>...<br>
+  Bass drums are percussion instruments and vary in size and are used in several musical genres
+  <br>...<br>
+  In many forms of music, the bass drum is used to mark or keep time. The bass drum makes a low, boom sound when the mallet hits the drumhead.
+</blockquote>
+<p>
+Ok, so what we get from this is that it's a kind of a <em>low-sounding</em> percussion instrument that is used to <em>keep time</em>. That last bit is particularly interesting, keeping time. What <em>is</em> time?</p>
+
+<img src="./what-is-time.png">
+
+<p>Besides being an illusion, you could also say that time is what it takes to get from place A to place B. And how do we get there? We walk! One foot after another. Applying a bit of Aristotelian logic, if thing A can do X and thing B can do the same X, then thing A can possibly be represented by thing B. So, if feet track time, and kicks track time, then feet must be for kicks. And vice versa. So, the kick sound is represented by our feet. Makes sense, that's why it's called a <em>kick</em>. But not only that, actually all sounds are represented on our body. Low frequency sounds like kicks and bass map to the lower part of our body, and higher frequency sounds like snares, hihats and most of the instruments map to our upper body.
+</p>
+<p>
+Ugghh, enough geeking! Let's listen to the damn kick. Click on play:
+</p>-->
+<pre><code title="techno-tutorial/kick-simple.js" mode="oneshot">
+export default t =>
+  Math.sin(110 * Math.exp(-t * 15))
+</code></pre>
+<!--<p>
+digital audio..
+sampling..
+fourier transform..
+wave shape,
+sine wave,
+exponent,
+time
+applying filters..
+ears as math processors..-->
+<pre><code title="techno-tutorial/kick.js" mode="oneshot">
+export default (t, {
+  phase = 1.822,
+  punch = 105,
+  speed = 12.8
+} = {}) =>
+  Math.sin(
+    phase
+  + punch
+  * Math.exp(-t * speed)
+  ) * (1-Math.min(1, t*8.5))
+</code></pre>
+
+<pre><code title="techno-tutorial/hihat.js" mode="oneshot">
+export default async c => {
+  let xm1 = 0
+  let x = 0
+  let y = 0
+  return mix => mix(
+    t => Math.sin(Math.random() * Math.exp(-t*10)),
+    t => {
+      x = +t.input
+      y = (y + x - xm1) * .4 * Math.exp(-t*10)
+      xm1 = x
+      return y
+    }
+  )
+}
+</code></pre>
+
+<pre><code title="techno-tutorial/kick-import.js" mode="oneshot">
+import kick from './kick.js'
+export default t => kick(t)
+</code></pre>
+
+<pre><code title="techno-tutorial/kick-loop.js" mode="loop">
+import kick from './kick.js'
+export default t => kick(t%(1/2))
+</code></pre>
+
+<pre><code title="techno-tutorial/kick-loop-buffer.js" mode="loop">
+export default async c => {
+  const kick = c.render('kick.js')
+  return t => kick(t)
+}
+</code></pre>
+
+<pre><code title="techno-tutorial/saw.js" mode="loop">
+export default (t, { freq = 50 }) =>
+  1 - 2 * (t % (1 / freq)) * freq
+</code></pre>
+
+<pre><code title="techno-tutorial/saw-melody.js" mode="loop">
+import saw from './saw.js'
+export default (t, {
+  melody = [50, 50, 80, 60]
+} = {}) =>
+  saw(t, { freq: melody[t.k % melody.length | 0] })
+</code></pre>
+
+<pre><code title="techno-tutorial/bass.js" mode="loop">
+import osc from './saw-melody.js'
+export default async c => {
+  const filter = c.RingBuffer('filter', 2)
+
+  // lowpass cutoff coefficient generator
+  const lowpass = (
+    hz,
+    dt = 1 / c.sampleRate,
+    rc = 1 / (hz * 2 * Math.PI)
+  ) => dt / (rc + dt)
+
+  // lowpass filter cutoff frequency
+  return mix => mix(
+    t => osc(t, { melody: [50, 50, 70, 60] }) * .55,
+
+    // lowpass filter
+    (t, {
+      cutoff = 300, // lowpass cutoff frequency
+      lfoSpeed = 2/3, // lfo speed
+      lfoAmount = cutoff - 50, // lfo amount
+      lfoPhase = 3.3 // lfo phase
+    } = {}) =>
+      filter[0] += (t.input - filter[0])
+    * lowpass(
+        cutoff
+      + lfoAmount
+      * Math.sin(lfoPhase + lfoSpeed * t.k * Math.PI * 2)
+    ),
+
+    // envelope
+    t => t.input *
+      ( Math.min(1, (t.k%(1/2)) * 20) // attack
+      - Math.min(1, (t.k%(1/2)) * 2) // decay
+      ),
+  )
+}
+</code></pre>
+
+<pre><code title="techno-tutorial/mix-buffers.js" mode="loop">
+export default async c => {
+  const bass = c.render('bass.js')
+  const kick = c.render('kick.js')
+  return t => bass(t) + kick(t)
+}
+</code></pre>
+
+<pre><code title="techno-tutorial/mix-breaks.js" mode="loop">
+export default async c => {
+  const bass = c.render('bass.js')
+  const kick = c.render('kick.js')
+  return t =>
+    bass(t, { size: c.beatRate*(t.k/4%3<2?3/2:4) })*4
+  + kick(t, { size: c.beatRate*(t.k/4%8<7?1:3/2) })*6
+}
+</code></pre>
+
+</article>
+<script type="module">
+import Editor, { registerEvents } from './src/editor.js'
+import { workerMix, Shared32Array } from './vendor/dsp/src/dsp.js'
+import DynamicCache from './vendor/dsp/dynamic-cache.js'
+
+const app = {}
+
+app.startAudio = () => {
+  if (app.audio) return
+  app.audio =
+  app.context =
+  app.audioContext = new AudioContext({
+    numberOfChannels: 2,
+    sampleRate: 44100,
+    latencyHint: 'playback'
+  })
+  app.audio.onstatechange = e => {
+    console.log('audio context state change:', app.audio.state)
+  }
+  app.gain = app.audio.createGain()
+  app.gain.gain.value = 0.3
+  app.gain.connect(app.audio.destination)
+}
+const editors = []
+
+const main = async () => {
+  await DynamicCache.install()
+  const cache = new DynamicCache('test', { 'Content-Type': 'application/javascript' })
+
+  ;[...document.querySelectorAll('code')].forEach(
+    (node, i) => {
+      const editor = new Editor({
+        id: i,
+        title: node.title,
+        value: node.textContent.trim(),
+        fontSize: '11.5pt',
+        width: 620,
+        height: 1,
+        padding: 10,
+        autoResize: true,
+        pseudoWorker: true,
+        cache
+      })
+
+      const mode = node.getAttribute('mode')
+      const isLoop = mode === 'loop'
+
+      let isPlaying = false
+      let schedulePlay = false
+
+      editors.push(editor)
+      const div = document.createElement('div')
+      div.className = 'editor'
+      div.appendChild(editor.canvas)
+      const play = document.createElement('div')
+      play.className = 'play ' + mode
+      play.textContent = isLoop ? '⟲' : '▶'
+      play.style.zIndex = '1000'
+      div.appendChild(play)
+      const errors = document.createElement('div')
+      errors.className = 'errors'
+      div.appendChild(errors)
+      play.onmousedown = async () => {
+        app.startAudio()
+
+        const stop = () => {
+          try {
+            editor.bufferSourceNode.stop()
+          } catch {}
+          editor.bufferSourceNode = null
+          editor.audioBuffer = null
+          schedulePlay = false
+          isPlaying = false
+          play.classList.remove('playing')
+          play.textContent = isLoop ? '⟲' : '▶'
+        }
+
+        if (isPlaying && mode === 'loop') return stop()
+
+        isPlaying = true
+        if (mode === 'loop') {
+          play.classList.add('playing')
+          play.textContent = '𝄥'
+        }
+
+        errors.textContent = ''
+        const bufferSize = 78400
+        const buffer = [
+          new Shared32Array(bufferSize),
+          new Shared32Array(bufferSize)
+        ]
+        const context = {
+          bpm: 135,
+          buffer,
+          cache,
+          autoRender: isLoop,
+          mode
+        }
+        // const filename = await cache.put(editor.title, editor.value)
+        const render = workerMix(editor.filename)
+        render.onerror = e => {
+          errors.textContent = e.stack.replaceAll(
+            document.location.origin + cache.path + '/',
+            ''
+          ) //.split('\n').slice(0, 3).join('\n')
+        }
+        render.onchange = () => {
+          errors.textContent = ''
+          // editor?.bufferSourceNode?.stop(editor.syncTime)
+        }
+        render.onrender = () => {
+          if (!isPlaying) return
+
+          const audioBuffer = editor.audioBuffer =
+            app.audio.createBuffer(
+              2,
+              bufferSize,
+              app.audio.sampleRate
+            )
+
+          const bufferSourceNode = app.audio.createBufferSource()
+          bufferSourceNode.buffer = audioBuffer
+          bufferSourceNode.connect(app.gain)
+          bufferSourceNode.loop = isLoop
+
+          for (const [i, data] of buffer.entries()) {
+            audioBuffer.getChannelData(i).set(data)
+          }
+
+          // const beatTime = context.beatRate / context.sampleRate
+          const barTime = (context.beatRate * 4) / context.sampleRate
+          const time = app.audio.currentTime
+          const remainTime = barTime - (time % barTime)
+          const syncTime = mode === 'loop' ? time + remainTime : 0
+
+
+          if (editor.bufferSourceNode) {
+            schedulePlay = true
+
+            // console.log('should stop at', syncTime)
+            editor.bufferSourceNode.onended = () => {
+              if (isPlaying && mode === 'loop') render(context)
+            }
+            editor.bufferSourceNode.stop(syncTime)
+            // return
+          }
+          editor.bufferSourceNode = bufferSourceNode
+          // console.log('should start at', syncTime)
+          bufferSourceNode.start(syncTime)
+          if (mode === 'oneshot') bufferSourceNode.onended = stop
+          if (mode !== 'oneshot' && !schedulePlay) render(context)
+        }
+
+        render(context)
+      }
+
+      node.parentNode.replaceChild(div, node)
+
+      editor.onresize()
+      setTimeout(() => editor.onresize(), 1000)
+    })
+
+  registerEvents(document.body)
+}
+
+main()
+</script>
+</body>
+</html>

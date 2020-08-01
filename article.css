@@ -1,0 +1,136 @@
+html, body {
+  padding: 20px;
+  font-family: 'Work Sans', sans-serif;
+  font-size: 12pt;
+  background: #1a1a1a;
+  color: #99b;
+}
+
+h1, h2, h3 {
+  text-align: center;
+  font-weight: normal;
+  font-style: italic;
+  font-family: 'Space Mono', monospace;
+}
+
+h1 {
+  font-size: 23.5pt;
+  margin-bottom: 70px;
+}
+
+h1 b {
+  font-family: 'Work Sans';
+  font-style: normal;
+  color: #f00;
+  font-size: 160%;
+  position: relative;
+  top: -3px;
+  vertical-align: middle;
+  display: inline-block;
+  text-shadow: 0px 10px #000;
+}
+
+h2 {
+  display: inline-block;
+  margin: 30px auto 0;
+  font-weight: bold;
+}
+
+h2, strong {
+  color: #f1f1f1;
+  border-bottom: 1px solid #f1f1f1;
+}
+
+article {
+  max-width: 620px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+p {
+  margin: 20px 0;
+  line-height: 27px;
+  text-align: left;
+}
+
+p strong {
+  font-weight: normal;
+}
+
+blockquote {
+  line-height: 27px;
+  box-sizing: border-box;
+  font-style: italic;
+  padding: 10px;
+  border-left: 4px solid #f00;
+  border-right: 4px solid #f00;
+  color: #f1f1f1;
+}
+
+img {
+  display: block;
+  margin: 35px auto;
+}
+
+.editor {
+  position: relative;
+}
+
+.play {
+  user-select: none;
+  position: absolute;
+  right: 10px;
+  top: 0;
+  line-height: 38px;
+  font-size: 45px;
+  color: #779;
+  cursor: pointer;
+}
+.play:before {
+  position: relative;
+  font-size: 11pt;
+  vertical-align: middle;
+  margin-right: 10px;
+  color: #fff;
+  font-style: italic;
+  content: 'play';
+  font-family: 'Work Sans';
+}
+.play.loop {
+  top: 3px;
+  right: 7px;
+}
+.play.loop:before {
+  content: 'loop';
+  top: -4px;
+  left: 5px;
+}
+.play.loop.playing:before {
+  content: 'pause';
+  top: -7px;
+  left: -1px;
+}
+.play.loop.playing {
+  color: #0f0;
+  font-size: 66px;
+  top: 4px;
+  right: 14px;
+}
+.play:hover {
+  color: #f00 !important;
+}
+.play:hover:before {
+  color: #fff;
+}
+
+.errors {
+  background: #000;
+  padding: 0 10px 5px;
+  font-family: 'Space Mono', monospace;
+  font-size: 8pt;
+  max-width: 620px;
+  color: #f00;
+  white-space: pre-wrap;
+  word-break: break-all;
+  text-align: left;
+}
