@@ -1,0 +1,20 @@
+<html>
+<body>
+<script>
+const create = () => {
+  const worker = new SharedWorker('/shared-worker.js')
+  worker.port.onmessage = ({ data }) => console.log('main receive', data)
+  worker.port.postMessage('hi')
+  // setTimeout(() => worker.port.close(), 100)
+}
+create()
+setTimeout(() => {
+  console.log('new?')
+  const worker = new SharedWorker('/shared-worker-2.js')
+  worker.port.onmessage = ({ data }) => console.log('main receive from 2', data)
+  worker.port.postMessage('hi')
+  // setTimeout(() => worker.port.close(), 100)
+}, 1000)
+</script>
+</body>
+</html>

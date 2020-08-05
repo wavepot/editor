@@ -13,6 +13,6 @@ self.addEventListener('fetch', event => {
     // const req = new Request(event.request.url.split('__')[0], event.request)
     // console.log(req.url)
     const response = await cache.match(event.request, { ignoreSearch: true })
-    return response ?? fetch(event.request, { mode: 'same-origin', cache: 'only-if-cached' })
+    return response ?? fetch(event.request, { mode: 'same-origin', cache: 'no-store' })
   }())
 })

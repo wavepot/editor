@@ -40,9 +40,14 @@ Ok, so what we get from this is that it's a kind of a <em>low-sounding</em> perc
 <p>
 Ugghh, enough geeking! Let's listen to the damn kick. Click on play:
 </p>-->
-<pre><code title="techno-tutorial/kick-simple.js" mode="oneshot">
-export default t =>
-  Math.sin(110 * Math.exp(-t * 15))
+<!-- <pre><code title="techno-tutorial/kick-simple.js" type="shot" bpm="60">
+export default c =>
+  Math.sin(440 * 2 * Math.PI * c.s)
+</code></pre>
+ -->
+<pre><code title="techno-tutorial/kick-simple.js" type="shot">
+export default c =>
+  Math.sin(110 * Math.exp(-c.t * 15))
 </code></pre>
 <!--<p>
 digital audio..
@@ -54,8 +59,8 @@ exponent,
 time
 applying filters..
 ears as math processors..-->
-<pre><code title="techno-tutorial/kick.js" mode="oneshot">
-export default (t, {
+<pre><code title="techno-tutorial/kick.js" type="shot">
+export default (c, {
   phase = 1.822,
   punch = 105,
   speed = 12.8
@@ -63,58 +68,95 @@ export default (t, {
   Math.sin(
     phase
   + punch
-  * Math.exp(-t * speed)
-  ) * (1-Math.min(1, t*8.5))
+  * Math.exp(-c.t * speed)
+  ) * (1-Math.min(1, c.t*8.5))
 </code></pre>
 
-<pre><code title="techno-tutorial/hihat.js" mode="oneshot">
+<pre><code title="techno-tutorial/hihat-inline-hp.js" type="shot">
+export default c => c(
+  c => Math.sin(Math.random() * Math.exp(-c.t*10)),
+  async c => {
+    let xm1 = 0
+    let x = 0
+    let y = 0
+    return (c, { a = .5 }) => {
+      x = +c.input
+      y = (y + x - xm1) * a
+      xm1 = x
+      return y
+    }
+  }
+)
+</code></pre>
+
+<pre><code title="techno-tutorial/highpass.js" type="shot">
 export default async c => {
   let xm1 = 0
   let x = 0
   let y = 0
-  return mix => mix(
-    t => Math.sin(Math.random() * Math.exp(-t*10)),
-    t => {
-      x = +t.input
-      y = (y + x - xm1) * .4 * Math.exp(-t*10)
-      xm1 = x
-      return y
-    }
-  )
+  return (c, { a = .5 }) => {
+    x = +c.input
+    y = (y + x - xm1) * a
+    xm1 = x
+    return y
+  }
 }
 </code></pre>
 
-<pre><code title="techno-tutorial/kick-import.js" mode="oneshot">
-import kick from './kick.js'
-export default t => kick(t)
+<pre><code title="techno-tutorial/hihat-mixed.js" type="shot">
+import Highpass from './highpass.js'
+export default c => c(
+  c => Math.sin(Math.random() * Math.exp(-c.t*10)),
+  async c => {
+    const hp = await Highpass(c)
+    return c => hp(c, { a: .5 * Math.exp(-c.t*10) })
+  }
+)
 </code></pre>
 
-<pre><code title="techno-tutorial/kick-loop.js" mode="loop">
-import kick from './kick.js'
-export default t => kick(t%(1/2))
+<pre><code title="techno-tutorial/envelope.js" type="shot">
+export default (c, { decay = 10 }) =>
+  Math.exp(-c.k * decay)
 </code></pre>
 
-<pre><code title="techno-tutorial/kick-loop-buffer.js" mode="loop">
+<pre><code title="techno-tutorial/hihat.js" type="shot">
+import env from './envelope.js'
+import Highpass from './highpass.js'
+export default c => c(
+  c => Math.sin(Math.random() * env(c, { decay: 8 })),
+  async c => {
+    const hp = await Highpass(c)
+    return c => hp(c, { a: .5 * env(c, { decay: 8 }) })
+  }
+)
+</code></pre>
+
+<pre><code title="techno-tutorial/kick-import.js" type="shot">
+import kick from './kick.js'
+export default c => kick(c)
+</code></pre>
+
+<!-- <pre><code title="techno-tutorial/kick-loop-buffer.js" type="loop">
 export default async c => {
   const kick = c.render('kick.js')
   return t => kick(t)
 }
 </code></pre>
-
-<pre><code title="techno-tutorial/saw.js" mode="loop">
-export default (t, { freq = 50 }) =>
-  1 - 2 * (t % (1 / freq)) * freq
+ -->
+<pre><code title="techno-tutorial/saw.js" type="loop">
+export default (c, { freq = 50 }) =>
+  1 - 2 * (c.s % (1 / freq)) * freq
 </code></pre>
 
-<pre><code title="techno-tutorial/saw-melody.js" mode="loop">
+<pre><code title="techno-tutorial/saw-melody.js" type="loop">
 import saw from './saw.js'
-export default (t, {
+export default (c, {
   melody = [50, 50, 80, 60]
 } = {}) =>
-  saw(t, { freq: melody[t.k % melody.length | 0] })
+  saw(c, { freq: melody[c.k % melody.length | 0] })
 </code></pre>
 
-<pre><code title="techno-tutorial/bass.js" mode="loop">
+<pre><code title="techno-tutorial/bass.js" type="loop">
 import osc from './saw-melody.js'
 export default async c => {
   const filter = c.RingBuffer('filter', 2)
@@ -153,15 +195,21 @@ export default async c => {
 }
 </code></pre>
 
-<pre><code title="techno-tutorial/mix-buffers.js" mode="loop">
-export default async c => {
-  const bass = c.render('bass.js')
-  const kick = c.render('kick.js')
-  return t => bass(t) + kick(t)
-}
+<pre><code title="techno-tutorial/mix-buffers.js" type="loop" bpm="135">
+export default async c => [
+  c => 0,
+  c => c(
+    './hihat.js',
+    c => c.buffer[0][c.p % (c.beatRate/2|0)]
+  ),
+  c => c(
+    './kick.js',
+    c => c.buffer[0][c.p % c.beatRate]
+  )
+]
 </code></pre>
 
-<pre><code title="techno-tutorial/mix-breaks.js" mode="loop">
+<pre><code title="techno-tutorial/mix-breaks.js" type="loop">
 export default async c => {
   const bass = c.render('bass.js')
   const kick = c.render('kick.js')
@@ -174,36 +222,63 @@ export default async c => {
 </article>
 <script type="module">
 import Editor, { registerEvents } from './src/editor.js'
-import { workerMix, Shared32Array } from './vendor/dsp/src/dsp.js'
+import LoopNode from './vendor/dsp/src/loop-node.js'
+import ShotNode from './vendor/dsp/src/shot-node.js'
+import Mix from './vendor/dsp/src/mix.js'
 import DynamicCache from './vendor/dsp/dynamic-cache.js'
+import toFinite from './lib/to-finite.js'
+import Audio from './audio.js'
 
 const app = {}
 
-app.startAudio = () => {
-  if (app.audio) return
-  app.audio =
-  app.context =
-  app.audioContext = new AudioContext({
-    numberOfChannels: 2,
-    sampleRate: 44100,
-    latencyHint: 'playback'
-  })
-  app.audio.onstatechange = e => {
-    console.log('audio context state change:', app.audio.state)
-  }
-  app.gain = app.audio.createGain()
-  app.gain.gain.value = 0.3
-  app.gain.connect(app.audio.destination)
-}
-const editors = []
-
 const main = async () => {
   await DynamicCache.install()
-  const cache = new DynamicCache('test', { 'Content-Type': 'application/javascript' })
+  const cache = new DynamicCache('article', { 'Content-Type': 'application/javascript' })
+
+  const widgets = []
+
+  cache.onchange = url => {
+    console.log('changed', url)
+    widgets.forEach(async widget => {
+      console.log(widget.mix?.g?.loaders)
+      if (widget.mix?.g?.loaders?.[url]) {
+        delete widget.mix.g.loaders[url]
+        // if (widget.node.playing) {
+
+          // const promise = new Promise(resolve => widget.mix.g.onload = resolve)
+          // widget.mix(widget.fn)
+          // await promise
+          // await widget.mix(widget.fn)
+          // widget.node.setBuffer(widget.buffer)
+
+        // }
+
+        console.log('updateddddddddddddddd', url)
+      }
+    })
+  }
+
+  const PlayNode = {
+    'loop': LoopNode,
+    'shot': ShotNode
+  }
+
+  const PlayIcon = {
+    'loop': '⟲',
+    'shot': '▶',
+    'playing': '𝄥'
+  }
 
   ;[...document.querySelectorAll('code')].forEach(
     (node, i) => {
-      const editor = new Editor({
+      const widget = {}
+
+      widgets.push(widget)
+
+      const type = widget.type = node.getAttribute('type')
+      const bpm = widget.bpm = toFinite(+node.getAttribute('bpm')) || 60
+
+      const editor = widget.editor = new Editor({
         id: i,
         title: node.title,
         value: node.textContent.trim(),
@@ -216,122 +291,155 @@ const main = async () => {
         cache
       })
 
-      const mode = node.getAttribute('mode')
-      const isLoop = mode === 'loop'
-
-      let isPlaying = false
-      let schedulePlay = false
-
-      editors.push(editor)
       const div = document.createElement('div')
       div.className = 'editor'
       div.appendChild(editor.canvas)
+
       const play = document.createElement('div')
-      play.className = 'play ' + mode
-      play.textContent = isLoop ? '⟲' : '▶'
+      play.className = 'play ' + type
+      play.textContent = PlayIcon[type]
       play.style.zIndex = '1000'
       div.appendChild(play)
+
       const errors = document.createElement('div')
       errors.className = 'errors'
       div.appendChild(errors)
+
       play.onmousedown = async () => {
-        app.startAudio()
+        const audio = Audio()
 
-        const stop = () => {
-          try {
-            editor.bufferSourceNode.stop()
-          } catch {}
-          editor.bufferSourceNode = null
-          editor.audioBuffer = null
-          schedulePlay = false
-          isPlaying = false
+        if (widget.node?.playing) {
+          widget.node.stop(0)
           play.classList.remove('playing')
-          play.textContent = isLoop ? '⟲' : '▶'
+          play.textContent = PlayIcon[type]
+          console.log('should stop????????????')
+          return
         }
 
-        if (isPlaying && mode === 'loop') return stop()
-
-        isPlaying = true
-        if (mode === 'loop') {
+        if (widget.type === 'loop') {
           play.classList.add('playing')
-          play.textContent = '𝄥'
+          play.textContent = PlayIcon['playing']
         }
 
-        errors.textContent = ''
-        const bufferSize = 78400
-        const buffer = [
-          new Shared32Array(bufferSize),
-          new Shared32Array(bufferSize)
-        ]
-        const context = {
-          bpm: 135,
-          buffer,
-          cache,
-          autoRender: isLoop,
-          mode
-        }
-        // const filename = await cache.put(editor.title, editor.value)
-        const render = workerMix(editor.filename)
-        render.onerror = e => {
-          errors.textContent = e.stack.replaceAll(
-            document.location.origin + cache.path + '/',
-            ''
-          ) //.split('\n').slice(0, 3).join('\n')
-        }
-        render.onchange = () => {
-          errors.textContent = ''
-          // editor?.bufferSourceNode?.stop(editor.syncTime)
-        }
-        render.onrender = () => {
-          if (!isPlaying) return
+        // errors.textContent = ''
 
-          const audioBuffer = editor.audioBuffer =
-            app.audio.createBuffer(
-              2,
-              bufferSize,
-              app.audio.sampleRate
-            )
+        if (!widget.node) {
+          const node = widget.node = new PlayNode[type]
+          node.setBpm(widget.bpm)
+          node.connect(audio.gain)
 
-          const bufferSourceNode = app.audio.createBufferSource()
-          bufferSourceNode.buffer = audioBuffer
-          bufferSourceNode.connect(app.gain)
-          bufferSourceNode.loop = isLoop
+          const buffer = widget.buffer = [
+            new Float32Array(node.bufferSize),
+            new Float32Array(node.bufferSize)
+          ]
 
-          for (const [i, data] of buffer.entries()) {
-            audioBuffer.getChannelData(i).set(data)
+          const context = {
+            bpm: node.bpm,
+            beatRate: node.beatRate,
+            sampleRate: node.sampleRate,
+            buffer,
           }
 
-          // const beatTime = context.beatRate / context.sampleRate
-          const barTime = (context.beatRate * 4) / context.sampleRate
-          const time = app.audio.currentTime
-          const remainTime = barTime - (time % barTime)
-          const syncTime = mode === 'loop' ? time + remainTime : 0
+          const fn = widget.fn = async c => [
+            c => 0,
+            editor.filename
+          ]
 
-
-          if (editor.bufferSourceNode) {
-            schedulePlay = true
-
-            // console.log('should stop at', syncTime)
-            editor.bufferSourceNode.onended = () => {
-              if (isPlaying && mode === 'loop') render(context)
-            }
-            editor.bufferSourceNode.stop(syncTime)
-            // return
+          const mix = widget.mix = Mix(context)
+          node.onbar = async () => {
+            console.log('bar')
+            await widget.mix(widget.fn)
+            widget.node.setBuffer(widget.buffer)
           }
-          editor.bufferSourceNode = bufferSourceNode
-          // console.log('should start at', syncTime)
-          bufferSourceNode.start(syncTime)
-          if (mode === 'oneshot') bufferSourceNode.onended = stop
-          if (mode !== 'oneshot' && !schedulePlay) render(context)
         }
 
-        render(context)
+        widget.node.start()
+
+        // const promise = new Promise(resolve => widget.mix.g.onload = resolve)
+        await widget.mix(widget.fn)
+        widget.node.setBuffer(widget.buffer)
+        // await promise
+        // await widget.mix(widget.fn)
+        // // .render(editor.filename, { type: c.type })
+
+        // mix.onerror = e => {
+        //   errors.textContent = e.stack.replaceAll(
+        //     document.location.origin + cache.path + '/',
+        //     ''
+        //   ) //.split('\n').slice(0, 3).join('\n')
+        // }
+
+        // mix.onchange = () => {
+        //   errors.textContent = ''
+        //   // editor?.bufferSourceNode?.stop(editor.syncTime)
+        // }
+
+        // mix.onrender = () => {
+        // }
+
+
+        // // const filename = await cache.put(editor.title, editor.value)
+        // const render = workerMix(editor.filename)
+        // render.onerror = e => {
+        //   errors.textContent = e.stack.replaceAll(
+        //     document.location.origin + cache.path + '/',
+        //     ''
+        //   ) //.split('\n').slice(0, 3).join('\n')
+        // }
+        // render.onchange = () => {
+        //   errors.textContent = ''
+        //   // editor?.bufferSourceNode?.stop(editor.syncTime)
+        // }
+        // render.onrender = () => {
+        //   if (!isPlaying) return
+
+        //   const audioBuffer = editor.audioBuffer =
+        //     app.audio.createBuffer(
+        //       2,
+        //       bufferSize,
+        //       app.audio.sampleRate
+        //     )
+
+        //   const bufferSourceNode = app.audio.createBufferSource()
+        //   bufferSourceNode.buffer = audioBuffer
+        //   bufferSourceNode.connect(app.gain)
+        //   bufferSourceNode.loop = isLoop
+
+        //   for (const [i, data] of buffer.entries()) {
+        //     audioBuffer.getChannelData(i).set(data)
+        //   }
+
+        //   // const beatTime = context.beatRate / context.sampleRate
+        //   const barTime = (context.beatRate * 4) / context.sampleRate
+        //   const time = app.audio.currentTime
+        //   const remainTime = barTime - (time % barTime)
+        //   const syncTime = type === 'loop' ? time + remainTime : 0
+
+
+        //   if (editor.bufferSourceNode) {
+        //     schedulePlay = true
+
+        //     // console.log('should stop at', syncTime)
+        //     editor.bufferSourceNode.onended = () => {
+        //       if (isPlaying && type === 'loop') render(context)
+        //     }
+        //     editor.bufferSourceNode.stop(syncTime)
+        //     // return
+        //   }
+        //   editor.bufferSourceNode = bufferSourceNode
+        //   // console.log('should start at', syncTime)
+        //   bufferSourceNode.start(syncTime)
+        //   if (type === 'shot') bufferSourceNode.onended = stop
+        //   if (type !== 'shot' && !schedulePlay) render(context)
+        // }
+
+        // render(context)
       }
 
       node.parentNode.replaceChild(div, node)
 
       editor.onresize()
-      setTimeout(() => editor.onresize(), 1000)
+      setInterval(() => editor.onresize(), 1000)
     })
 
   registerEvents(document.body)
