@@ -103,6 +103,14 @@ export default async c => {
 }
 </code></pre>
 
+<pre><code title="techno-tutorial/lowpass.js" type="shot">
+export default async c => {
+  let y = 0
+  return (c, { a = .5 }) =>
+    y += (c.input - y) * a
+}
+</code></pre>
+
 <pre><code title="techno-tutorial/hihat-mixed.js" type="shot">
 import Highpass from './highpass.js'
 export default c => c(
@@ -120,22 +128,22 @@ export default (c, { decay = 10 }) =>
 </code></pre>
 
 <pre><code title="techno-tutorial/hihat.js" type="shot">
-import env from './envelope.js'
+import envelope from './envelope.js'
 import Highpass from './highpass.js'
 export default c => c(
-  c => Math.sin(Math.random() * env(c, { decay: 8 })),
+  c => Math.sin(Math.random() * envelope(c, { decay: 8 })),
   async c => {
     const hp = await Highpass(c)
-    return c => hp(c, { a: .5 * env(c, { decay: 8 }) })
+    return c => hp(c, { a: .5 * envelope(c, { decay: 8 }) })
   }
 )
 </code></pre>
-
+<!--
 <pre><code title="techno-tutorial/kick-import.js" type="shot">
 import kick from './kick.js'
 export default c => kick(c)
 </code></pre>
-
+ -->
 <!-- <pre><code title="techno-tutorial/kick-loop-buffer.js" type="loop">
 export default async c => {
   const kick = c.render('kick.js')
@@ -151,11 +159,29 @@ export default (c, { freq = 50 }) =>
 <pre><code title="techno-tutorial/saw-melody.js" type="loop">
 import saw from './saw.js'
 export default (c, {
-  melody = [50, 50, 80, 60]
+  melody = [
+    50, 50, 71, 60,
+    50, 50, 90, 60,
+  ]
 } = {}) =>
-  saw(c, { freq: melody[c.k % melody.length | 0] })
+  saw(c, { freq: melody[c.b % melody.length|0] })
 </code></pre>
 
+<pre><code title="techno-tutorial/bass.js" type="loop" bpm="135">
+import Lowpass from './lowpass.js'
+export default (c, { a = .5 }) => c(
+  c => c('./saw-melody.js'),
+  async c => {
+    const lp = await Lowpass(c)
+    return c => lp(c, { a: a + ((a-.002)
+    * Math.sin(3.15+(1/8)*c.b*Math.PI*2)
+    * Math.sin(3.14+(3/2)*c.b*Math.PI*2)
+    ) })*.4
+  }
+)
+</code></pre>
+
+<!--
 <pre><code title="techno-tutorial/bass.js" type="loop">
 import osc from './saw-melody.js'
 export default async c => {
@@ -194,21 +220,24 @@ export default async c => {
   )
 }
 </code></pre>
-
+ -->
 <pre><code title="techno-tutorial/mix-buffers.js" type="loop" bpm="135">
-export default async c => [
-  c => 0,
-  c => c(
-    './hihat.js',
-    c => c.buffer[0][c.p % (c.beatRate/2|0)]
+export default c => c(
+  c => c('./bass.js', {a:.05}),
+  c => c({n:0},'./hihat.js',
+    c => loop(c, c.beatRate/2)
   ),
-  c => c(
-    './kick.js',
-    c => c.buffer[0][c.p % c.beatRate]
+  c => c({n:0},'./kick.js',
+    c => loop(c, c.beatRate)
   )
+)
+
+const loop = (c, samples) => [
+  c.buffer[0][c.p % samples|0],
+  c.buffer[1][c.p % samples|0]
 ]
 </code></pre>
-
+<!--
 <pre><code title="techno-tutorial/mix-breaks.js" type="loop">
 export default async c => {
   const bass = c.render('bass.js')
@@ -218,42 +247,34 @@ export default async c => {
   + kick(t, { size: c.beatRate*(t.k/4%8<7?1:3/2) })*6
 }
 </code></pre>
-
+ -->
 </article>
 <script type="module">
 import Editor, { registerEvents } from './src/editor.js'
 import LoopNode from './vendor/dsp/src/loop-node.js'
 import ShotNode from './vendor/dsp/src/shot-node.js'
 import Mix from './vendor/dsp/src/mix.js'
+import mixWorker from './vendor/dsp/src/mix-worker-service.js'
 import DynamicCache from './vendor/dsp/dynamic-cache.js'
 import toFinite from './lib/to-finite.js'
 import Audio from './audio.js'
+import atomic from './vendor/dsp/lib/atomic.js'
 
 const app = {}
 
+const scheduleUpdate = new Set
+
 const main = async () => {
   await DynamicCache.install()
-  const cache = new DynamicCache('article', { 'Content-Type': 'application/javascript' })
+  const cache = window.__cache = new DynamicCache('article', { 'Content-Type': 'application/javascript' })
 
   const widgets = []
 
   cache.onchange = url => {
-    console.log('changed', url)
-    widgets.forEach(async widget => {
-      console.log(widget.mix?.g?.loaders)
-      if (widget.mix?.g?.loaders?.[url]) {
-        delete widget.mix.g.loaders[url]
-        // if (widget.node.playing) {
-
-          // const promise = new Promise(resolve => widget.mix.g.onload = resolve)
-          // widget.mix(widget.fn)
-          // await promise
-          // await widget.mix(widget.fn)
-          // widget.node.setBuffer(widget.buffer)
-
-        // }
-
-        console.log('updateddddddddddddddd', url)
+    scheduleUpdate.add(url)
+    widgets.forEach(widget => {
+      if (widget.node?.playing) {
+        widget.render()
       }
     })
   }
@@ -306,14 +327,19 @@ const main = async () => {
       div.appendChild(errors)
 
       play.onmousedown = async () => {
+        let n = 0
+
         const audio = Audio()
 
-        if (widget.node?.playing) {
+        const stop = () => {
           widget.node.stop(0)
           play.classList.remove('playing')
           play.textContent = PlayIcon[type]
-          console.log('should stop????????????')
-          return
+          mixWorker.clear()
+        }
+
+        if (widget.node?.playing) {
+          return stop()
         }
 
         if (widget.type === 'loop') {
@@ -334,6 +360,7 @@ const main = async () => {
           ]
 
           const context = {
+            url: editor.filename,
             bpm: node.bpm,
             beatRate: node.beatRate,
             sampleRate: node.sampleRate,
@@ -341,23 +368,52 @@ const main = async () => {
           }
 
           const fn = widget.fn = async c => [
-            c => 0,
+            c => { c.buffer.forEach(b => b.fill(0)) },
             editor.filename
           ]
+            // async c => [
+            //   c => [0,0],
+            //   editor.filename
+            // ]
 
           const mix = widget.mix = Mix(context)
           node.onbar = async () => {
-            console.log('bar')
-            await widget.mix(widget.fn)
-            widget.node.setBuffer(widget.buffer)
+            // console.trace()
+            // console.log('[BAR]', node.currentTime.toFixed(1))
+            n += node.bufferSize
+
+            widget.render()
           }
         }
 
-        widget.node.start()
-
+        widget.render = atomic(async () => {
+          if (scheduleUpdate.size > 0) {
+            for (const url of scheduleUpdate) {
+              mixWorker.update(url)
+              console.log('updating', url)
+            }
+            scheduleUpdate.clear()
+          }
+          const time = performance.now()
+          const result = await widget.mix(widget.fn, { n })
+          const diff = performance.now() - time
+          console.log(diff)
+          if (diff > 1000) console.warn('Too slow!', (diff/1000).toFixed(1) + 's' )
+          if (widget.buffer.slice(0,5))
+          console.log('rendered', widget.buffer[0].slice(0,5))
+          widget.node.playBuffer(widget.buffer)
+        }, { recentOnly: true })
+        // widget.node.start()
         // const promise = new Promise(resolve => widget.mix.g.onload = resolve)
-        await widget.mix(widget.fn)
-        widget.node.setBuffer(widget.buffer)
+        // await widget.mix(widget.fn, { n })
+        const result = await widget.mix(widget.fn, { n })
+        // if (result instanceof Error  || result.call === 'onerror') {
+        //   console.warn(result)
+        //   return stop()
+        // }
+        widget.node.resetTime(-3)
+        widget.node.start()
+        widget.node.playBuffer(widget.buffer)
         // await promise
         // await widget.mix(widget.fn)
         // // .render(editor.filename, { type: c.type })
