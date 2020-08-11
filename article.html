@@ -379,8 +379,6 @@ const main = async () => {
           play.textContent = PlayIcon['playing']
         }
 
-        // errors.textContent = ''
-
         if (!widget.node) {
           const node = widget.node = new PlayNode[type]
           node.setBpm(widget.bpm)
@@ -401,22 +399,10 @@ const main = async () => {
           }
 
           const fn = widget.fn = c => c.src(editor.filename)
-            // async c => [
-            // c => { c.buffer.forEach(b => b.fill(0)) },
-            // editor.filename
-          // ]
-            // async c => [
-            //   c => [0,0],
-            //   editor.filename
-            // ]
 
           const mix = widget.mix = Mix(context)
           node.onbar = async () => {
-            // console.log('BAR')
-            // console.trace()
-            // console.log('[BAR]', node.currentTime.toFixed(1))
             widget.n += widget.buffer[0].length
-
             widget.render()
           }
         }
@@ -425,7 +411,6 @@ const main = async () => {
           if (scheduleUpdate.size > 0) {
             for (const url of scheduleUpdate) {
               mixWorker.update(url)
-              console.log('updating', url)
             }
             scheduleUpdate.clear()
           }
@@ -441,15 +426,10 @@ const main = async () => {
           const diff = performance.now() - time
           console.log('time to render:', diff)
           if (diff > 1000) console.warn('Too slow!', (diff/1000).toFixed(1) + 's' )
-          // if (widget.buffer.slice(0,5))
-          // console.log('rendered', widget.buffer[0].slice(0,5))
           widget.node.playBuffer(widget.buffer)
           draw(widget.buffer[0])
         }, { recentOnly: true, timeout: 2000 })
 
-        // widget.node.start()
-        // const promise = new Promise(resolve => widget.mix.g.onload = resolve)
-        // await widget.mix(widget.fn, { n })
         try {
           await widget.mix(widget.fn, { n: widget.n })
           if (type === 'loop' && !playingWidget) return
@@ -458,10 +438,7 @@ const main = async () => {
           console.error('thrown error', error)
           return
         }
-        // if (result instanceof Error  || result.call === 'onerror') {
-        //   console.warn(result)
-        //   return stop()
-        // }
+
         if (type === 'shot') {
           if (scheduleUpdate.size > 0) {
             for (const url of scheduleUpdate) {
@@ -478,82 +455,6 @@ const main = async () => {
           widget.node.playBuffer(widget.buffer)
         }
         draw(widget.buffer[0])
-        // await promise
-        // await widget.mix(widget.fn)
-        // // .render(editor.filename, { type: c.type })
-
-        // mix.onerror = e => {
-        //   errors.textContent = e.stack.replaceAll(
-        //     document.location.origin + cache.path + '/',
-        //     ''
-        //   ) //.split('\n').slice(0, 3).join('\n')
-        // }
-
-        // mix.onchange = () => {
-        //   errors.textContent = ''
-        //   // editor?.bufferSourceNode?.stop(editor.syncTime)
-        // }
-
-        // mix.onrender = () => {
-        // }
-
-
-        // // const filename = await cache.put(editor.title, editor.value)
-        // const render = workerMix(editor.filename)
-        // render.onerror = e => {
-        //   errors.textContent = e.stack.replaceAll(
-        //     document.location.origin + cache.path + '/',
-        //     ''
-        //   ) //.split('\n').slice(0, 3).join('\n')
-        // }
-        // render.onchange = () => {
-        //   errors.textContent = ''
-        //   // editor?.bufferSourceNode?.stop(editor.syncTime)
-        // }
-        // render.onrender = () => {
-        //   if (!isPlaying) return
-
-        //   const audioBuffer = editor.audioBuffer =
-        //     app.audio.createBuffer(
-        //       2,
-        //       bufferSize,
-        //       app.audio.sampleRate
-        //     )
-
-        //   const bufferSourceNode = app.audio.createBufferSource()
-        //   bufferSourceNode.buffer = audioBuffer
-        //   bufferSourceNode.connect(app.gain)
-        //   bufferSourceNode.loop = isLoop
-
-        //   for (const [i, data] of buffer.entries()) {
-        //     audioBuffer.getChannelData(i).set(data)
-        //   }
-
-        //   // const beatTime = context.beatRate / context.sampleRate
-        //   const barTime = (context.beatRate * 4) / context.sampleRate
-        //   const time = app.audio.currentTime
-        //   const remainTime = barTime - (time % barTime)
-        //   const syncTime = type === 'loop' ? time + remainTime : 0
-
-
-        //   if (editor.bufferSourceNode) {
-        //     schedulePlay = true
-
-        //     // console.log('should stop at', syncTime)
-        //     editor.bufferSourceNode.onended = () => {
-        //       if (isPlaying && type === 'loop') render(context)
-        //     }
-        //     editor.bufferSourceNode.stop(syncTime)
-        //     // return
-        //   }
-        //   editor.bufferSourceNode = bufferSourceNode
-        //   // console.log('should start at', syncTime)
-        //   bufferSourceNode.start(syncTime)
-        //   if (type === 'shot') bufferSourceNode.onended = stop
-        //   if (type !== 'shot' && !schedulePlay) render(context)
-        // }
-
-        // render(context)
       }
 
       node.parentNode.replaceChild(div, node)
@@ -570,14 +471,9 @@ const main = async () => {
 const draw = (data) => {
   const canvas = document.getElementById('vis')
   const ctx = canvas.getContext('2d')
-  // data = data.slice()
-  // console.log(data.subarray(0,10).slice())
-  // data = data.slice(0, 10)
-  // console.log(data)
-  // console.log(data)
   const width = canvas.width*2*window.devicePixelRatio
-  const height = canvas.height/2 //100//*window.devicePixelRatio
-  ctx.clearRect(0, 0, width, height) //*2, height*2)
+  const height = canvas.height/2
+  ctx.clearRect(0, 0, width, height)
   ctx.globalCompositeOperation = 'source-over'
   ctx.fillStyle = 'rgba(0,0,0,.5)' //'#99ff00'
   ctx.fillRect(0, 0, width, height) //*2, height*2)
@@ -614,7 +510,6 @@ const draw = (data) => {
     ctx.moveTo(x/2/2, h)
     ctx.lineTo(x/2/2, (h + (min * h)))
     ctx.stroke()
-
 
     // let sum = 0
     // for (let i = x*w; i < x*w+w; i += s) {
