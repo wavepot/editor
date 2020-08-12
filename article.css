@@ -143,4 +143,12 @@ img {
   left: 0;
   top: 0;
   z-index: 10;
+  display: grid;
+}
+
+#vis canvas {
+  width: 200px;
+  height: 150px;
+  background: black;
+  margin-bottom: 4px;
 }
