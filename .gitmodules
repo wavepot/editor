@@ -1,0 +1,4 @@
+[submodule "vendor/dsp"]
+    path = vendor/dsp
+    branch = rewrite
+    url = git@github.com:wavepot/dsp.git
