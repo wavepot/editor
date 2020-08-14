@@ -50,29 +50,26 @@ Ugghh, enough geeking! Let's listen to the damn kick. Click on play:
 export default c => +c.x
 </code></pre>
  -->
-<pre><code title="techno-tutorial/lowpass.js" type="shot">
-export default async c => {
-  let y = 0
-  return (c, { a = .5 }) =>
-    y += (c.input - y) * a
-}
+
+<pre><code title="techno-tutorial/saw.js" type="shot">
+export default (c, { freq = 50, ig = 's' }) =>
+  1 - 2 * (c[ig] % (1 / freq)) * freq
 </code></pre>
 
-<pre><code title="techno-tutorial/highpass.js" type="shot">
-export default async c => {
-  let xm1 = 0
-  let x = 0
-  let y = 0
-  return (c, { a = .5 }) => {
-    x = +c.input
-    y = (y + x - xm1) * a
-    xm1 = x
-    return y
-  }
-}
+<pre><code title="techno-tutorial/sin.js" type="shot">
+export default (c, { freq = 50, ig = 's' }) =>
+  Math.sin(freq * c[ig] * Math.PI * 2)
 </code></pre>
 
-<pre><code title="techno-tutorial/saw-melody.js" type="loop">
+<pre><code title="techno-tutorial/tone.js" type="shot">
+export default c =>
+  (c.s < .5 ? Math.sin(50 * 2 * Math.PI * c.s) : 0)*.3
++ (c.s < .5 ? Math.sin(3000 * 2 * Math.PI * c.s) : 0)*.3
++ (c.s < .5 ? Math.sin(10000 * 2 * Math.PI * c.s) : 0)*.3
++ (c.s < .5 ? Math.sin(20000 * 2 * Math.PI * c.s) : 0)*.3
+</code></pre>
+
+<pre><code title="techno-tutorial/saw-melody.js" type="shot">
 import saw from './saw.js'
 export default (c, {
   melody = [
@@ -83,9 +80,124 @@ export default (c, {
   saw(c, { freq: melody[c.b % melody.length|0] })
 </code></pre>
 
-<pre><code title="techno-tutorial/tone.js" type="shot">
-export default c =>
-  c.s < .5 ? Math.sin(3000 * 2 * Math.PI * c.s) : 0
+<pre><code title="techno-tutorial/saw-melody-wavetable.js" type="loop">
+import Saw from './saw-wavetable.js'
+export default async c => {
+  const saw = await Saw(c)
+  return (c, {
+    melody=[
+      50, 50, 71, 60,
+      50, 50, 90, 60,
+    ]
+  }=c) =>
+    saw(c, {freq:melody[c.b % melody.length|0]}) }
+</code></pre>
+
+<pre><code title="techno-tutorial/wavetable.js" type="loop" bpm="150">
+export default async (c, {
+  osc='./saw.js',
+  len=1024,
+  sync='sr',
+  alias=false
+}=c) => {
+  let coeff = len/c[sync]
+  let pos = 0.0
+  let index = 0
+  let alpha = 0.0
+  let next = 0.0
+  let curr = 0.0
+  let buffer = await c.buf({len,ch:1})
+  let table = (await c.src(osc,{
+    n:0,
+    buffer,
+    ig:sync[0],
+    freq:c[sync]/len
+  }))[0]
+  if (alias) {
+    return (c,{freq=64}=c) => {
+      pos = (c.n*freq*coeff)%len
+      index = Math.floor(pos)
+      alpha = pos-index
+      next = table[index+1]??table[0]
+      curr = table[index]
+      return curr+(next-curr)*alpha
+    }
+  } else {
+    return (c,{freq=64}=c) => {
+      pos = (c.n*freq*coeff)%len
+      index = Math.floor(pos)
+      return table[index]
+    }
+  }
+}
+</code></pre>
+
+<pre><code title="techno-tutorial/saw-wavetable.js" type="shot">
+export default async (c, {
+  len=1024,
+  alias=true
+}=c) => {
+  let coeff = len/c.sr
+  let pos = 0.0
+  let index = 0
+  let alpha = 0.0
+  let next = 0.0
+  let curr = 0.0
+  let buffer = await c.buf({len,ch:1})
+  let table = (await c.src('./saw.js',{
+    n:0,
+    buffer,
+    freq:c.sr/len
+  }))[0]
+  return (c,{freq=64}={}) => {
+    pos += freq*coeff
+    if (pos > len) pos -= len
+    index = pos|0
+    if (!alias) return table[index]??0
+    alpha = pos-index
+    next = table[index+1]??table[0]??0
+    curr = table[index]??0
+    return curr+(next-curr)*alpha
+  }
+}
+</code></pre>
+
+<pre><code title="techno-tutorial/mix-buffers-auto.js" type="shot" bpm="135">
+export default c => c(
+  c => c.new({len:c.br*4,ch:1},
+    c => c.src('./bass.js',{a:.05}),//,{melody:[50,0]}),
+    c => c.x * 2
+  ),
+  c => c.new({len:c.br/([1,2,3,4][Math.random()*4|0]),ch:1},
+    c => c.src('./hihat.js',{n:0}),
+  ),
+  c => c.new({len:c.br*([1,3/2,.5][Math.random()*3|0]),ch:1},
+    c => c.src('./kick.js',{n:0}),
+    c => c.x * 4
+  ),
+)
+</code></pre>
+
+<pre><code title="techno-tutorial/lowpass.js" type="shot">
+export default async c => {
+  let y = 0
+  return (c, { a = .5 }) =>
+    y += (c.x - y) * a
+}
+</code></pre>
+
+<pre><code title="techno-tutorial/highpass.js" type="shot">
+export default async c => {
+  let xm1 = 0
+  let x = 0
+  let y = 0
+  return (c, { a = .5 }) => {
+    x = +c.x
+    y = (y + x - xm1) * a
+    xm1 = x
+    return y
+  }
+}
 </code></pre>
 
 <pre><code title="techno-tutorial/kick-simple.js" type="shot">
@@ -123,7 +235,7 @@ export default c => c(
     let x = 0
     let y = 0
     return (c, { a = .5 }) => {
-      x = +c.input
+      x = +c.x
       y = (y + x - xm1) * a
       xm1 = x
       return y
@@ -138,7 +250,7 @@ export default async c => {
   let x = 0
   let y = 0
   return (c, { a = .5 }) => {
-    x = +c.input
+    x = +c.x
     y = (y + x - xm1) * a
     xm1 = x
     return y
@@ -165,11 +277,11 @@ export default (c, { decay = 10 }) =>
 <pre><code title="techno-tutorial/hihat.js" type="shot">
 import envelope from './envelope.js'
 import Highpass from './highpass.js'
-export default c => c(
-  c => Math.sin(Math.random() * envelope(c, { decay: 8 })),
+export default (c, {decay=8,a=.5}) => c(
+  c => Math.sin(Math.random() * envelope(c, { decay })),
   async c => {
     const hp = await Highpass(c)
-    return c => hp(c, { a: .5 * envelope(c, { decay: 8 }) })
+    return c => hp(c, { a: a * envelope(c, { decay }) })
   }
 )
 </code></pre>
@@ -186,23 +298,56 @@ export default async c => {
 }
 </code></pre>
  -->
-<pre><code title="techno-tutorial/saw.js" type="loop">
-export default (c, { freq = 50 }) =>
-  1 - 2 * (c.s % (1 / freq)) * freq
+<pre><code title="techno-tutorial/piano.js" type="loop" bpm="135">
+import envelope from './envelope.js'
+import Wave from './wavetable.js'
+const harm = [
+  // 0.700, 0.243, 0.229, 0.095, 0.139, 0.087, 0.288, 0.199, 0.124, 0.090,
+  0.700, 0.043, 0.829, 0.095, 0.739, 0.487, 0.088, 0.599, 0.024, 0.790,
+]
+export default async c => {
+  const tonic = await Wave(c, {osc:'./sin.js'})
+  const sins = await Promise.all(
+    harm.map(() => Wave(c, {osc:'./sin.js'})))
+  let x = 0
+  let hz = 0
+  return (c, {
+    melody=[
+      50, 50, 71, 60,
+      50, 50, 90, 60,
+    ]
+  }=c) => {
+    x = 0
+    hz = melody[c.b % melody.length|0]
+    x += tonic(c, { freq: hz })
+    for (let i = 1; i <= harm.length; i++) {
+      x += sins[i-1](c, { freq: hz*i*harm[i-1] })
+    }
+    return x/harm.length
+  }
+}
 </code></pre>
 
+
+
 <pre><code title="techno-tutorial/bass.js" type="loop" bpm="135">
+import Wave from './wavetable.js'
 import Lowpass from './lowpass.js'
-export default (c, { a = .5 }) => c(
-  c => c.src('./saw-melody.js'),
-  async c => {
-    const lp = await Lowpass(c)
-    return c => lp(c, { a: a + ((a-.002)
-    * Math.sin(3.15+(1/8)*c.b*Math.PI*2)
-    * Math.sin(3.14+(3/2)*c.b*Math.PI*2)
-    ) })*.4
-  }
-)
+export default async (c, { a = .5 }=c) => {
+  const lfo1 = await Wave(c, {osc:'./sin.js'})
+  const lfo2 = await Wave(c, {osc:'./sin.js'})
+
+  return c => c(
+    c => c.src('./saw-melody-wavetable.js'),
+    async c => {
+      const lp = await Lowpass(c)
+      return c => lp(c, { a: a + ((a-.002)
+      * lfo1(c, {freq:3.15+(1/8)})
+      * lfo2(c, {freq:3.14+(3/2)})
+      ) })*.4
+    }
+  )
+}
 </code></pre>
 
 <!--
@@ -246,33 +391,154 @@ export default async c => {
 </code></pre>
  -->
 <pre><code title="techno-tutorial/mix-buffers.js" type="loop" bpm="135">
-export default c => c(
-  c => c.new({len:c.br*4,ch:1},
-    c => c.src('./bass.js',{a:.02}),
-  ),
-  c => c.new({len:c.br/2,ch:1},
-    c => c.src('./hihat.js',{n:0}),
-  ),
-  c => c.new({len:c.br,ch:1},
-    c => c.src('./kick.js',{n:0}),
-  ),
-)
+export default async c => {
+  // const bass = await c.src('./bass.js',{a:.02,
+  const bassBuffer = await c.buf({id:'bass',len:c.br*4,ch:1})
+
+  const hihat = await c.src('./hihat.js',{n:0,
+    buffer: await c.buf({id:'hihat',len:c.br,ch:1})})
+
+  const kick = await c.src('./kick.js',{n:0,
+    buffer: await c.buf({id:'kick',len:c.br,ch:1})})
+
+  return async c => {
+    const bass = await c.src('./bass.js',{a:.22,
+      buffer: bassBuffer})
+
+    c.mix(c.zero(c.buffer),
+      hihat,
+      kick,
+      bass
+    )
+  }
+}
 </code></pre>
 
-<pre><code title="techno-tutorial/mix-buffers-auto.js" type="loop" bpm="135">
-export default c => c(
-  c => c.new({len:c.br*4,ch:1},
-    c => c.src('./bass.js',{a:.05}),//,{melody:[50,0]}),
-    c => c.input * 2
-  ),
-  c => c.new({len:c.br/([1,2,3,4][Math.random()*4|0]),ch:1},
-    c => c.src('./hihat.js',{n:0}),
-  ),
-  c => c.new({len:c.br*([1,3/2,.5][Math.random()*3|0]),ch:1},
-    c => c.src('./kick.js',{n:0}),
-    c => c.input * 4
-  ),
-)
+
+<pre><code title="techno-tutorial/mix-buffers.js-2" type="loop" bpm="135">
+export default async c => {
+  const bassBuffer = await c.buf({id:'bass',len:c.br*4,ch:1})
+
+  const hihat = await c.src('./hihat.js',{n:0,a:.05,
+    decay: .5,
+    buffer: await c.buf({id:'hihat',len:c.br*2,ch:1})})
+
+  const kick = await c.src('./kick.js',{n:0,
+    buffer: await c.buf({id:'kick',len:c.br*2,ch:1})})
+
+  return async c => {
+    const bass = await c.src('./bass.js',{a:.56,
+      len:64,alias:true,
+      melody:[30,30*11/7],
+      buffer: bassBuffer})
+
+    c.mix(c.zero(c.buffer),
+      [hihat,1/2],
+      // [kick,4/4],
+      [bass,3/4],
+    )
+  }
+}
+</code></pre>
+
+<pre><code title="techno-tutorial/mix-piano.js" type="loop" bpm="135">
+import Piano from './piano.js'
+
+export default async c => {
+  const bassBuffer = await c.buf({id:'bass',len:c.br*4,ch:1})
+
+  const chord = await Promise.all([1,2,3].map(
+    () => Piano(c)))
+
+  const hihat = await c.src('./hihat.js',{n:0,a:.05,
+    decay: 3.5,
+    buffer: await c.buf({id:'hihat',len:c.br*2,ch:1})})
+
+  const kick = await c.src('./kick.js',{n:0,
+    buffer: await c.buf({id:'kick',len:c.br*2,ch:1})})
+
+  const Notes = [120,140,160]
+
+  let notes = Notes.map(n => n*3.29)
+
+  return c => c(
+    c => { c.zero(c.buffer) },
+    async c => async c => {
+      const bass = await c.src('./bass.js',{a:.02,
+        len:64,alias:true,
+        melody:[50,50*11/7],
+        buffer: bassBuffer})
+
+      c.mix(c.buffer,
+        [hihat,1/4],
+        [kick,2/4],
+        [bass,3/4],
+      )
+    },
+    // c => { notes = Notes.map(n => n*Math.random()*5) },
+    c => c.x
+    + (chord[0](c, { melody: [notes[0]] })*.2
+    + chord[1](c, { melody: [notes[1]] })*.14
+    + chord[2](c, { melody: [notes[2]] })*.17)
+    * [c.k<2.75
+      ?Math.exp(-((c.k+.34)%1) * 6.3)
+      :Math.exp(-((c.k+.34)%1/2) * 3)]
+  )
+}
+</code></pre>
+
+<pre><code title="techno-tutorial/mix-piano-2.js" type="loop" bpm="135">
+import Piano from './piano.js'
+
+export default async c => {
+  const [bass,hihat,kick] = await Promise.all([
+    c.buf({id:'bass',len:c.br*8,ch:1}),
+    c.buf({id:'hihat',len:c.br*2,ch:1}),
+    c.buf({id:'kick',len:c.br*2,ch:1}),
+  ])
+  await Promise.all([
+    c.src('./bass.js',{buffer:bass,
+      a:.22,
+      len:64,
+      alias:false,
+      melody:[50,50*11/7],
+    }),
+    c.src('./hihat.js',{buffer:hihat,
+      a:.05,
+      decay:3.5
+    }),
+    c.src('./kick.js',{buffer:kick,
+      a:.05,
+      decay:3.5
+    }),
+  ])
+  return c => c(
+    c => { c.zero(c.buffer) },
+    c => {
+      c.mix(c.buffer,
+        [hihat,1/2],
+        [kick,2/4],
+        [bass,3/4],
+      )
+    },
+    async c => {
+      const chord = await Promise.all(
+        [1,2,3].map(() => Piano(c)))
+
+      const Notes = [120,140,160]
+      const notes = Notes.map(n => n*3.29)
+
+    // c => { notes = Notes.map(n => n*Math.random()*5) },
+      return c => c.x
+        + (chord[0](c, { melody: [notes[0]] })*.2
+        + chord[1](c, { melody: [notes[1]] })*.14
+        + chord[2](c, { melody: [notes[2]] })*.17)
+        * [c.k<2.75
+          ?Math.exp(-((c.k+.34)%1) * 6.3)
+          :Math.exp(-((c.k+.34)%1/2) * 3)]
+    }
+  )
+}
 </code></pre>
 <!--
 <pre><code title="techno-tutorial/mix-breaks.js" type="loop">
@@ -438,14 +704,18 @@ const main = async () => {
             scheduleUpdate.clear()
           }
           const time = performance.now()
+          console.time('audio render')
           try {
+            console.log('PASS N', widget.n)
             await widget.mix(widget.fn, { n: widget.n })
             if (!widget.node.playing) return
           } catch (error) {
             errors.textContent = error.stack
+            console.timeEnd('audio render')
             console.error(error)
             return
           }
+          console.timeEnd('audio render')
           const diff = performance.now() - time
           console.log('time to render:', diff)
           if (diff > 1000) console.warn('Too slow!', (diff/1000).toFixed(1) + 's' )
@@ -453,14 +723,17 @@ const main = async () => {
           draw(widget.buffer[0])
         }, { recentOnly: true, timeout: 2000 })
 
+        console.time('audio render ' + widget.buffer[0].length)
         try {
           await widget.mix(widget.fn, { n: widget.n })
           if (type === 'loop' && !playingWidget) return
         } catch (error) {
           errors.textContent = error.stack
+          console.timeEnd('audio render ' + widget.buffer[0].length)
           console.error('thrown error', error)
           return
         }
+        console.timeEnd('audio render ' + widget.buffer[0].length)
 
         if (type === 'shot') {
           if (scheduleUpdate.size > 0) {
@@ -473,22 +746,22 @@ const main = async () => {
           widget.node.setBuffer(widget.buffer)
           widget.node.start()
 
-          const sweepBuffer = [
-            new Shared32Array(4096)
-          ]
-          const sweep = Mix({ url: editor.filename, buffer: sweepBuffer })
-          await sweep(c => c(
-            c => {
-              let freq = Math.floor((((1+c.p) / c.bufferSize) * 22050) / 20) * 20
-              return (1 - 2 * (c.s % (1 / freq)) * freq)*.3
-                + Math.sin(freq * c.s * Math.PI * 2)*.3
-                + (Math.random() * 2 - 1)*.3
-            },
-            // + Math.cos(((1+c.p) / c.bufferSize) * 22050 * c.s * Math.PI * 2),
-            // c => Math.random() * 2 - 1,//Math.sin(((1+c.p) / c.bufferSize) * 22050 * c.s * Math.PI * 2),
-            c => c.src(editor.filename)
-          ))
-          drawWorker.postMessage({ drawSweep: sweep.buffer[0] })
+          // const sweepBuffer = [
+          //   new Shared32Array(4096)
+          // ]
+          // const sweep = Mix({ url: editor.filename, buffer: sweepBuffer })
+          // await sweep(c => c(
+          //   c => {
+          //     let freq = Math.floor((((1+c.p) / c.bufferSize) * 22050) / 20) * 20
+          //     return (1 - 2 * (c.s % (1 / freq)) * freq)*.3
+          //       + Math.sin(freq * c.s * Math.PI * 2)*.3
+          //       + (Math.random() * 2 - 1)*.3
+          //   },
+          //   // + Math.cos(((1+c.p) / c.bufferSize) * 22050 * c.s * Math.PI * 2),
+          //   // c => Math.random() * 2 - 1,//Math.sin(((1+c.p) / c.bufferSize) * 22050 * c.s * Math.PI * 2),
+          //   c => c.src(editor.filename)
+          // ))
+          // drawWorker.postMessage({ drawSweep: sweep.buffer[0] })
 
         } else {
           widget.node.resetTime?.(-3)

@@ -1,6 +1,6 @@
 import FFT from './lib/fft.js'
 
-const WINDOW = 4096
+const WINDOW = 4096/2
 const SLICES = 1
 
 const fft = new FFT(
@@ -11,6 +11,8 @@ const fft = new FFT(
 )
 
 export default (canvas, data) => {
+  data = data.subarray(0,2048)
+  console.time('draw frequency')
   // const fftData = []
 
   // let slice
@@ -52,7 +54,7 @@ export default (canvas, data) => {
   ctx.moveTo(0, y)
   const s = 1
   for (let x = 0; x < width; x++) {
-    let xw = Math.floor(x*fftData.length / width)
+    let xw = Math.floor(x * fftData.length / width)
     let val = fftData[xw]
 
     // let sum = 0
@@ -86,6 +88,7 @@ export default (canvas, data) => {
   }
   ctx.strokeStyle = `rgba(100,150,255,.7)`
   ctx.stroke()
+  console.timeEnd('draw frequency')
 }
 
 const linearToLog = (min, max, now) => {

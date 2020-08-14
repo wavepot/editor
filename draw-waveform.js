@@ -1,4 +1,5 @@
 export default (canvas, data, state) => {
+  console.time('draw waveform')
   if (state === 2) data = data.subarray(0, data.length / 4 | 0)
   if (state === 3) data = data.subarray(0, data.length / 8 | 0)
   if (state === 4) data = data.subarray(0, data.length / 16 | 0)
@@ -56,4 +57,5 @@ export default (canvas, data, state) => {
   }
   ctx.lineTo(width, h)
   ctx.stroke()
+  console.timeEnd('draw waveform')
 }
