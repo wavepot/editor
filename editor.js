@@ -239,7 +239,11 @@ export const registerEvents = (parent) => {
 
       // enable overlayed items to handle their own events
       // so as far as we are concerned, the target is null
-      if (target && e.target !== target.canvas && e.target !== textarea) {
+      if (target
+      && e.target !== textarea
+      && e.target !== target.canvas
+      && e.target !== target.parent
+      ) {
         target = null
         type = 'hover'
         noBlur = true
