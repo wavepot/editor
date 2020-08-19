@@ -2022,7 +2022,7 @@ if (isWorker) {
     'Space Mono',
     `local('Space Mono'),
      local('SpaceMono-Regular'),
-     url('/fonts/SpaceMono-Regular.woff2') format('woff2')`,
+     url('./fonts/SpaceMono-Regular.woff2') format('woff2')`,
   )
 
   self.fonts.add(fontFace)
