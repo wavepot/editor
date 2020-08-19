@@ -13,6 +13,10 @@ Point.prototype.set = function(p) {
   this.y = p.y;
 };
 
+Point.prototype.isNotZero = function () {
+  return this.x !== 0 || this.y !== 0
+}
+
 Point.prototype.copy = function() {
   return new Point(this);
 };
@@ -25,6 +29,20 @@ Point.prototype.addRight = function(x) {
   this.x += x;
   return this;
 };
+
+Point.prototype.abs = function () {
+  return new Point({
+    x: Math.abs(this.x),
+    y: Math.abs(this.y)
+  })
+}
+
+Point.prototype.sign = function () {
+  return new Point({
+    x: Math.sign(this.x),
+    y: Math.sign(this.y)
+  })
+}
 
 Point.prototype['/'] =
 Point.prototype.div = function(p) {
@@ -59,6 +77,7 @@ Point.prototype.ceilDiv = function(p) {
 };
 
 Point.prototype['+'] =
+Point.prototype.plus =
 Point.prototype.add = function(p) {
   return new Point({
     x: this.x + (p.x || p.width || 0),
@@ -67,6 +86,7 @@ Point.prototype.add = function(p) {
 };
 
 Point.prototype['-'] =
+Point.prototype.minus =
 Point.prototype.sub = function(p) {
   return new Point({
     x: this.x - (p.x || p.width || 0),
@@ -113,6 +133,10 @@ Point.prototype.lerp = function(p, a) {
   });
 };
 
+Point.prototype.clamp = function(area) {
+  return Point.clamp(area, this)
+}
+
 Point.prototype.toString = function() {
   return this.x + ',' + this.y;
 };
@@ -139,8 +163,8 @@ Point.low = function(low, p) {
 
 Point.clamp = function(area, p) {
   return new Point({
-    x: Math.min(area.end.x, Math.max(area.begin.x, p.x)),
-    y: Math.min(area.end.y, Math.max(area.begin.y, p.y))
+    x: Math.min(area.end?.x ?? area.width, Math.max(area.begin?.x ?? 0, p.x)),
+    y: Math.min(area.end?.y ?? area.height, Math.max(area.begin?.y ?? 0, p.y))
   });
 };
 

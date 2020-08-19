@@ -13,9 +13,8 @@ var syntax = Regexp.join([
   // 'params',
   'attribute',
   // 'keyword',
-  ['property', R(['declare'])],
   ['variable', R(['variable','call'], '')],
-  ['keyword', R(['operator', 'keyword'], '')],
+  ['keyword', R(['operator'])],
   // 'string',
   'definition',
   ['number', R(['special', 'number'], '')],
@@ -32,8 +31,10 @@ var Blocks = Regexp.join([
   'comment',
   // 'string',
   // ['definition', R(['arguments']), '^'],
+  ['property', R(['declare'])],
+  ['keyword', R(['keyword'])],
   ['number', R(['string'])],
-  'regexp',
+  // 'regexp',
 ], 'gm');
 
 var LongLines = /(^.{1000,})/gm;
@@ -44,7 +45,7 @@ var Tag = {
   '`': 'string',
   '"': 'string',
   "'": 'string',
-  '/': 'regexp',
+  // '/': 'regexp',
 };
 
 export default function Syntax(o) {

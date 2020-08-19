@@ -37,6 +37,7 @@ Parts.prototype.append = function(items) {
 
 Parts.prototype.get = function(index) {
   var part = this.findPartByIndex(index).item;
+  if (!part) return -1
   return (part[Math.min(part.length - 1, index - part.startIndex)] ?? -1) + part.startOffset;
 };
 

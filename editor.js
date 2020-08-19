@@ -1,26 +1,344 @@
-const isWithin = (e, { left, top, right, bottom }) => {
-  if ((e.clientX ?? e.pageX) >= left && (e.clientX ?? e.pageX) <= right
-  && (e.clientY ?? e.pageY) >= top && (e.clientY ?? e.pageY) <= bottom) {
-    return true
+import PseudoWorker from './worker.js'
+import ask from './lib/prompt.js'
+
+const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+const pixelRatio = window.devicePixelRatio
+
+let ignore = false
+let selectionText = ''
+let textarea
+
+export const editors = {}
+
+export default class Editor {
+  constructor (data) {
+    this.onchange(data)
+
+    editors[this.id] = this
+
+    this.canvas = document.createElement('canvas')
+    this.canvas.width = data.width * pixelRatio
+    this.canvas.height = data.height * pixelRatio
+    this.canvas.style.width = data.width + 'px'
+    this.canvas.style.height = data.height + 'px'
+
+    if (!this.pseudoWorker) {
+      const workerUrl = new URL('worker.js', import.meta.url).href
+      this.worker = new Worker(workerUrl, { type: 'module' })
+      this.worker.onerror = error => this.onerror(error)
+      this.worker.onmessage = ({ data }) => this[data.call](data)
+    } else {
+      this.setupPseudoWorker()
+    }
+  }
+
+  async setupPseudoWorker () {
+    this.worker = new PseudoWorker()
+    this.worker.onerror = error => this.onerror(error)
+    this.worker.onmessage = ({ data }) => this[data.call](data)
+    this.worker.setupFonts()
+  }
+
+  onerror (error) {
+    console.error(error)
+  }
+
+  onready () {
+    const outerCanvas = this.pseudoWorker ? this.canvas : this.canvas.transferControlToOffscreen()
+    this.worker.postMessage({
+      call: 'setup',
+      id: this.id,
+      title: this.title,
+      value: this.value,
+      fontSize: this.fontSize,
+      autoResize: this.autoResize,
+      padding: this.padding,
+      outerCanvas,
+      pixelRatio,
+    }, [outerCanvas])
+  }
+
+  async onchange (data) {
+    Object.assign(this, data)
+    if (this.cache) {
+      this.filename = await this.cache.put(this.projectName + '/' + this.title, this.value)
+      console.log('put in cache:', this.filename)
+    }
+  }
+
+  onhistory (history) {
+    this.history = history
+  }
+
+  onfocus () {
+  }
+
+  onselection ({ text }) {
+    if (textarea) {
+      if (text.length) {
+        textarea.select()
+      } else {
+        textarea.selectionStart = -1
+        textarea.selectionEnd = -1
+      }
+    }
+    selectionText = text
+  }
+
+  onresize () {
+    this.parent = this.parent ?? this.canvas.parentNode
+    const rect = this.canvas.getBoundingClientRect()
+    rect.y += window.pageYOffset
+    rect.x += window.pageXOffset
+    this.rect = rect
+  }
+
+  handleEvent (type, eventName, e = {}) {
+    const data = eventHandlers[type](e, eventName, this)
+    if (!data) return false
+    // if (ignore) return false
+
+    if (!(data.cmdKey && data.key === 'x')) {
+      e.preventDefault?.()
+      e.stopPropagation?.()
+    }
+
+    if ((data.ctrlKey || data.metaKey) && data.key === 'm') {
+      e.preventDefault()
+      ask('Change name', `Type a new name for "${this.title}"`, this.title).then(async (result) => {
+        if (!result) return
+        this.title = result.value
+        this.worker
+          .postMessage({
+            call: 'renameEditor',
+            id: this.id,
+            title: this.title
+          })
+      })
+      return false
+    }
+
+    this.worker.postMessage({ call: eventName, ...data })
   }
 }
 
-const createEventsHandler = parent => {
-  const targets = {}
+export const registerEvents = (parent) => {
+  textarea = document.createElement('textarea')
+  textarea.style.position = 'fixed'
+  // textarea.style.left = (e.clientX ?? e.pageX) + 'px'
+  // textarea.style.top = (e.clientY ?? e.pageY) + 'px'
+  textarea.style.width = '100px'
+  textarea.style.height = '100px'
+  textarea.style.marginLeft = '-50px'
+  textarea.style.marginTop = '-50px'
+  textarea.style.opacity = 0
+  textarea.style.visibility = 'none'
+  textarea.style.resize = 'none'
+  textarea.autocapitalize = 'none'
+  textarea.autocomplete = 'off'
+  textarea.spellchecking = 'off'
+  textarea.value = 0
+
+  document.body.appendChild(textarea)
+
+  // create undo/redo capability
+  textarea.select()
+  document.execCommand('insertText', false, 1)
+  textarea.select()
+  document.execCommand('insertText', false, 2)
+  document.execCommand('undo', false)
+  textarea.selectionStart = -1
+  textarea.selectionEnd = -1
+
+  textarea.oncut = e => {
+    e.preventDefault()
+    e.clipboardData.setData('text/plain', selectionText)
+    selectionText = ''
+    events.targets?.focus?.worker.postMessage({ call: 'onkeydown', cmdKey: true, key: 'x' })
+    textarea.selectionStart = -1
+    textarea.selectionEnd = -1
+  }
+
+  textarea.oncopy = e => {
+    e.preventDefault()
+    e.clipboardData.setData('text/plain', selectionText)
+  }
+
+  textarea.onpaste = e => {
+    e.preventDefault()
+    const text = e.clipboardData.getData('text/plain')
+    events.targets?.focus?.worker.postMessage({ call: 'onpaste', text })
+  }
+
+  textarea.oninput = e => {
+    if (ignore) return
+
+    ignore = true
+    const editor = events.targets.focus
+    const needle = +textarea.value
+    if (needle === 0) { // is undo
+      document.execCommand('redo', false)
+      if (editor?.history) {
+        if (editor.history.needle > 1) {
+          editor.history.needle--
+          editor.worker.postMessage({
+            call: 'onhistory',
+            needle: editor.history.needle
+          })
+        }
+      }
+    } else if (needle === 2) { // is redo
+      document.execCommand('undo', false)
+      if (editor?.history) {
+        if (editor.history.needle < editor.history.log.length) {
+          editor.history.needle++
+          editor.worker.postMessage({
+            call: 'onhistory',
+            needle: editor.history.needle
+          })
+        }
+      }
+    }
+    ignore = false
+    // if (needle !== history.needle) {
+    //   if (needle >= 1) {
+    //     history.needle = needle
+    //     textarea.selectionStart = -1
+    //     textarea.selectionEnd = -1
+    //     events.targets?.focus?.postMessage({ call: 'onhistory', needle })
+    //     // app.storeHistory(editor, history)
+    //   } else {
+    //     document.execCommand('redo', false)
+    //   }
+    // }
+    // document.execCommand('redo', false)
+
+    textarea.selectionStart = -1
+    textarea.selectionEnd = -1
+  }
+
+  const targetHandler = (e, type) => {
+    if (ignore) return
+    let _target = null
+    for (const target of Object.values(editors)) {
+      if (events.isWithin(e, target)) {
+        _target = target
+        break
+      }
+    }
+    events.setTarget(type, _target, e)
+  }
+
+  const events = {
+    ignore: false,
+    targets: {},
+    setTarget (type, target, e) {
+      const previous = this.targets[type]
+
+      let noBlur = false
+
+      // enable overlayed items to handle their own events
+      // so as far as we are concerned, the target is null
+      if (target && e.target !== target.canvas && e.target !== textarea) {
+        target = null
+        type = 'hover'
+        noBlur = true
+      }
+
+      this.targets[type] = target
+
+      if (previous !== target) {
+        const focus = type === 'focus'
+        if (previous && !noBlur) {
+          previous.handleEvent(
+            focus ? 'window' : 'mouse',
+            focus ? 'onblur' : 'onmouseout',
+            e
+          )
+        }
+        if (target) {
+          target.handleEvent(
+            focus ? 'window' : 'mouse',
+            focus ? 'onfocus' : 'onmouseenter',
+            e
+          )
+          target.handleEvent('mouse', 'on' + e.type, e)
+        }
+      }
+    },
+    isWithin (e, { rect, parent }) {
+      let { left, top, right, bottom } = rect
+      left -= parent.scrollLeft //+ window.pageXOffset
+      right -= parent.scrollLeft //+ window.pageXOffset
+      top -= parent.scrollTop //+ window.pageYOffset
+      bottom -= parent.scrollTop //+ window.pageYOffset
+      if ((e.pageX ?? e.clientX) >= left && (e.pageX ?? e.clientX) <= right
+      && (e.pageY ?? e.clientY) >= top && (e.pageY ?? e.clientY) <= bottom) {
+        return true
+      }
+    },
+    destroy () {
+      const handlers = [
+        ...mouseEventHandlers,
+        ...keyEventHandlers,
+        ...windowEventHandlers
+      ]
+
+      for (const [target, eventName, fn] of handlers.values()) {
+        target.removeEventListener(eventName, fn)
+      }
+
+      window.removeEventListener('mousedown', focusTargetHandler, { capture: true, passive: false })
+      window.removeEventListener('mousewheel', hoverTargetHandler, { capture: true, passive: false })
+      window.removeEventListener('mousemove', hoverTargetHandler, { capture: true, passive: false })
+
+      document.body.removeChild(textarea)
+      textarea.oncut =
+      textarea.oncopy =
+      textarea.onpaste =
+      textarea.oninput = null
+      textarea = null
+    }
+  }
 
   const handlerMapper = (target, type) => eventName => {
     const handler = e => {
-      if (type === 'mouse') {
-        if (eventName === 'onmouseup') targets.forceWithin = null
-        if (eventName === 'onmousedown') targets.forceWithin = targets.hover
-        if (targets.forceWithin) {
-          return targets.forceWithin.el.handleEvent(type, eventName, e)
+      let targets = events.targets
+
+      if (!targets.forceWithin) {
+        if (eventName === 'onmousedown') {
+          targetHandler(e, 'focus')
+        } else if (eventName === 'onmousewheel' || eventName === 'onmousemove') {
+          targetHandler(e, 'hover')
         }
-        if (targets.hover && isWithin(e, targets.hover)) {
-          return targets.hover.el.handleEvent(type, eventName, e)
+      }
+
+      if (type === 'key') {
+      }
+      if (type === 'mouse') {
+        if (eventName === 'onmouseup') {
+          targets.forceWithin = null
+        }
+        if (eventName === 'onmousedown' && !targets.forceWithin) {
+          targets.forceWithin = targets.hover
+        }
+        if (targets.forceWithin) {
+          return targets.forceWithin.handleEvent?.(type, eventName, e)
+        }
+        if (targets.hover && events.isWithin(e, targets.hover)) {
+          return targets.hover.handleEvent?.(type, eventName, e)
         }
       } else if (targets.focus) {
-        return targets.focus.el.handleEvent(type, eventName, e)
+        return targets.focus.handleEvent?.(type, eventName, e)
+      }
+      if (type === 'window') {
+        if (eventName === 'onfocus') {
+          return targets.focus?.handleEvent?.(type, eventName, e)
+        } else {
+          for (const editor of Object.values(editors)) {
+            editor.handleEvent?.(type, eventName, e)
+          }
+        }
       }
     }
     target.addEventListener(
@@ -48,229 +366,98 @@ const createEventsHandler = parent => {
     'onblur',
     'onfocus',
     'onresize',
+    'oncontextmenu',
   ].map(handlerMapper(window, 'window'))
 
-  return {
-    setTarget (type, target, e) {
-      const previous = targets[type]
-      targets[type] = target
-      if (previous !== target) {
-        const focus = type === 'focus'
-        if (previous) {
-          previous.el.handleEvent(
-            focus ? 'window' : 'mouse',
-            focus ? 'onblur' : 'onmouseout',
-            e
-          )
-        }
-        if (target) {
-          target.el.handleEvent(
-            focus ? 'window' : 'mouse',
-            focus ? 'onfocus' : 'onmouseenter',
-            e
-          )
-        }
-      }
-    },
-    destroy () {
-      const handlers = [
-        ...mouseEventHandlers,
-        ...keyEventHandlers,
-        ...windowEventHandlers
-      ]
-
-      for (const [target, eventName, fn] of handlers.values()) {
-        target.removeEventListener(eventName, fn)
-      }
-    }
-  }
+  return events
 }
 
-const createEditor = (width, height) => {
-  let onready
-  let textarea
-  let selectionText = ''
-  let history = { length: 1, needle: 1 }
-  let ignore = true
-
-  const createTextArea = e => {
-    textarea = document.createElement('textarea')
-    textarea.style.position = 'absolute'
-    textarea.style.left = (e.clientX ?? e.pageX) + 'px'
-    textarea.style.top = (e.clientY ?? e.pageY) + 'px'
-    textarea.style.width = '100px'
-    textarea.style.height = '100px'
-    textarea.style.marginLeft = '-50px'
-    textarea.style.marginTop = '-50px'
-    textarea.style.opacity = 0
-    textarea.style.visibility = 'none'
-    textarea.style.resize = 'none'
-    textarea.autocapitalize = 'none'
-    textarea.autocomplete = 'off'
-    textarea.spellchecking = 'off'
-    textarea.value = 0
-
-    document.body.appendChild(textarea)
-
-    textarea.oncut = e => {
-      e.preventDefault()
-      e.clipboardData.setData('text/plain', selectionText)
-      selectionText = ''
-      worker.postMessage({ call: 'onkeydown', cmdKey: true, key: 'x' })
-      textarea.selectionStart = -1
-      textarea.selectionEnd = -1
+const eventHandlers = {
+  window (e, eventName, editor) {
+    if (eventName === 'oncontextmenu') {
+      return
     }
-
-    textarea.oncopy = e => {
-      e.preventDefault()
-      e.clipboardData.setData('text/plain', selectionText)
-    }
-
-    textarea.onpaste = e => {
-      e.preventDefault()
-      const text = e.clipboardData.getData('text/plain')
-      worker.postMessage({ call: 'onpaste', text })
-    }
-
-    textarea.oninput = e => {
-      if (ignore) return
-      const needle = +textarea.value
-      if (needle !== history.needle) {
-        if (needle >= 1) {
-          history.needle = needle
-          textarea.selectionStart = -1
-          textarea.selectionEnd = -1
-          worker.postMessage({ call: 'onhistory', needle })
-        } else {
-          document.execCommand('redo', false)
-        }
-      }
-      textarea.selectionStart = -1
-      textarea.selectionEnd = -1
-    }
-  }
-
-  const removeTextArea = () => {
-    if (textarea) {
-      document.body.removeChild(textarea)
-      textarea.oncut =
-      textarea.oncopy =
-      textarea.onpaste =
-      textarea.oninput = null
-      textarea = null
-    }
-  }
-
-  const canvas = document.createElement('canvas')
-  const pixelRatio = window.devicePixelRatio
-  canvas.width = width * pixelRatio
-  canvas.height = height * pixelRatio
-  canvas.style.width = `${width}px`
-  canvas.style.height = `${height}px`
-
-  const worker = new Worker('./editor-worker.js', { type: 'module' })
-  worker.onerror = e => console.error(e)
-
-  const methods = {
-    onready () {
-      onready()
-    },
-    onhistory ({ length, needle }) {
-      const lastNeedle = history.needle
-      history.length = length
-      history.needle = needle
-      if (textarea && needle !== lastNeedle) {
-        textarea.select()
-        document.execCommand('insertText', false, needle)
-      }
-    },
-    onselection ({ text }) {
-      if (textarea) {
-        if (text.length) {
-          textarea.select()
-        } else {
-          textarea.selectionStart = -1
-          textarea.selectionEnd = -1
-        }
-      }
-      selectionText = text
-    }
-  }
-
-  worker.onmessage = ({ data }) => methods[data.call](data)
-
-  const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-  const eventMapper = fn => (eventName, e) => {
-    const data = fn(e, eventName)
-    if (!data) return false
-
-    // if (ignore) return false
-
-    if (!(data.cmdKey && data.key === 'x')) {
-      e.preventDefault?.()
-      e.stopPropagation?.()
-    }
-    worker.postMessage({
-      call: eventName,
-      ...data
-    })
-  }
-  const eventHandlers = {}
-  const handleEvent = (type, eventName, e) => eventHandlers[type](eventName, e)
-  eventHandlers.window = eventMapper((e, eventName) => {
     if (eventName === 'onfocus') {
-      removeTextArea()
-      createTextArea(e)
-      textarea.focus()
-      ignore = true
-      for (var i = 1; i <= history.length; i++) {
-        textarea.select()
-        document.execCommand('insertText', false, i)
-      }
-      for (var i = history.needle; i < history.length; i++) {
-        document.execCommand('undo', false)
-      }
-      ignore = false
-      textarea.selectionStart = -1
-      textarea.selectionEnd = -1
+  //     console.log('on focus', editor.id)
+
+  //     if (!editor.history) return
+
+  //     ignore = true
+
+  //     textarea.focus()
+  //     textarea.select()
+
+  //     document.execCommand('undo', false)
+  //     document.execCommand('undo', false)
+  // console.log('here')
+  //     textarea.select()
+  //     if (editor.history.needle > 1) {
+  //       document.execCommand('insertText', false, editor.history.needle)
+  //     }
+  //     if (editor.history.needle < editor.history.log.length) {
+  //       document.execCommand('insertText', false, editor.history.needle)
+  //       document.execCommand('undo', false)
+  //     }
+  //     console.log('focus...')
+
+  //     ignore = false
+
+
+      // return
+      // ignore = true
+      // textarea.focus()
+      // textarea.select()
+      // document.execCommand('insertText', false, 1)
+      // ignore = false
+      // return
+      // removeTextArea()
+      // createTextArea(e)
+      // updateHistory()
     }
     if (eventName === 'onblur') {
-      ignore = true
-      for (var i = 1; i <= history.needle; i++) {
-        document.execCommand('undo', false)
+      // undoCurrentHistory()
+      // removeTextArea()
+      // return
+    }
+    if (eventName === 'onresize') {
+      // app.updateSizes()
+      return {
+        width: editor.width * pixelRatio,
+        height: editor.height * pixelRatio
       }
-      removeTextArea()
     }
     return {/* todo */}
-  })
-  eventHandlers.mouse = eventMapper((e, eventName) => {
+  },
+  mouse (e, eventName, editor) {
     if (textarea) {
       if (eventName === 'onmouseenter') {
         textarea.style.pointerEvents = 'all'
+        textarea.focus()
       } else if (eventName === 'onmouseout') {
         textarea.style.pointerEvents = 'none'
+        textarea.blur()
       }
     }
-    const pos = canvas.getBoundingClientRect()
-    const clientX = e.clientX ?? e.pageX
-    const clientY = e.clientY ?? e.pageY
+    const rect = editor.rect
+    const clientX = e.pageX
+    const clientY = e.pageY
     const deltaX = (e.deltaX || 0) / 1000
     const deltaY = (e.deltaY || 0) / 1000
     if (textarea) {
-      textarea.style.left = clientX + 'px'
-      textarea.style.top = clientY + 'px'
+      textarea.style.left = e.clientX + 'px'
+      textarea.style.top = e.clientY + 'px'
     }
     return {
-      clientX: clientX - pos.x,
-      clientY: clientY - pos.y,
+      clientX: clientX - rect.x,
+      clientY: clientY - rect.y,
       deltaX,
       deltaY,
       left: e.which === 1,
       middle: e.which === 2,
       right: e.which === 3
     }
-  })
-  eventHandlers.key = eventMapper(e => {
+  },
+  key (e, eventName) {
     const {
       key,
       which,
@@ -297,63 +484,5 @@ const createEditor = (width, height) => {
       metaKey,
       cmdKey
     }
-  })
-  return {
-    canvas,
-    worker,
-    handleEvent,
-    setup () {
-      onready = () => {
-        const pos = canvas.getBoundingClientRect().toJSON()
-        const outerCanvas = canvas.transferControlToOffscreen()
-        worker.postMessage({ call: 'setup', pos, outerCanvas, pixelRatio }, [outerCanvas])
-      }
-    }
   }
 }
-
-const events = createEventsHandler(window)
-
-const editors = []
-
-const create = (width, height) => {
-  const editor = createEditor(width, height)
-  document.body.appendChild(editor.canvas)
-  editor.setup()
-  editors.push(editor)
-}
-
-// document.fonts.ready.then((fontFaceSet) => {
-  // console.log(fontFaceSet.size)
-    // console.log(fontFaceSet.size, 'FontFaces loaded.');
-    // document.getElementById('waitScreen').style.display = 'none';
-  // create(window.innerWidth - 260, 200)
-  // create(window.innerWidth, 200)
-  // create(200, 200)
-  // create(300, window.innerHeight)
-  // create(300, window.innerHeight)
-  // create(300, window.innerHeight)
-create(window.innerWidth, window.innerHeight)
-  // for (let i = 0; i < 40; i++) create(70, 70)
-// });
-
-
-const targets = editors.map(editor => ({
-  el: editor,
-  ...editor.canvas.getBoundingClientRect().toJSON()
-}))
-
-const targetHandler = type => e => {
-  let _target = null
-  targets.forEach(target => {
-    if (isWithin(e, target)) _target = target
-  })
-  events.setTarget(type, _target, e)
-}
-
-const focusTargetHandler = targetHandler('focus')
-const hoverTargetHandler = targetHandler('hover')
-
-window.addEventListener('mousedown', focusTargetHandler, { passive: false })
-window.addEventListener('mousewheel', hoverTargetHandler, { passive: false })
-window.addEventListener('mousemove', hoverTargetHandler, { passive: false })
