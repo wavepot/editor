@@ -1,4 +1,3 @@
-import PseudoWorker from './worker.js'
 import ask from './lib/prompt.js'
 
 const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
@@ -12,9 +11,15 @@ export const editors = {}
 
 export default class Editor {
   constructor (data) {
-    this.onchange(data)
-
+    this.data = data
+    this.isVisible = true
+    this.hasSetup = false
+    this.toAdd = []
+    this.id = data.id ?? (Math.random() * 10e6 | 0).toString(36)
     editors[this.id] = this
+    this._onchange(data)
+
+    this.focusedEditor = this
 
     this.canvas = document.createElement('canvas')
     this.canvas.width = data.width * pixelRatio
@@ -25,55 +30,78 @@ export default class Editor {
     if (!this.pseudoWorker) {
       const workerUrl = new URL('worker.js', import.meta.url).href
       this.worker = new Worker(workerUrl, { type: 'module' })
-      this.worker.onerror = error => this.onerror(error)
-      this.worker.onmessage = ({ data }) => this[data.call](data)
+      this.worker.onerror = error => this._onerror(error)
+      this.worker.onmessage = ({ data }) => this['_' + data.call](data)
     } else {
       this.setupPseudoWorker()
     }
   }
 
   async setupPseudoWorker () {
+    const PseudoWorker = await import(new URL('worker.js', import.meta.url))
     this.worker = new PseudoWorker()
-    this.worker.onerror = error => this.onerror(error)
-    this.worker.onmessage = ({ data }) => this[data.call](data)
-    this.worker.setupFonts()
+    this.worker.onerror = error => this._onerror(error)
+    this.worker.onmessage = ({ data }) => this['_' + data.call](data)
   }
 
-  onerror (error) {
+  destroy () {
+    delete editors[this.id]
+    this.worker.terminate()
+    this.canvas.parentNode.removeChild(this.canvas)
+  }
+
+  _onerror (error) {
     console.error(error)
   }
 
-  onready () {
+  _onready () {
     const outerCanvas = this.pseudoWorker ? this.canvas : this.canvas.transferControlToOffscreen()
     this.worker.postMessage({
       call: 'setup',
       id: this.id,
       title: this.title,
+      extraTitle: this.extraTitle,
       value: this.value,
+      font: this.font,
       fontSize: this.fontSize,
       autoResize: this.autoResize,
       padding: this.padding,
+      titlebarHeight: this.titlebarHeight,
       outerCanvas,
       pixelRatio,
     }, [outerCanvas])
+    this.onready?.()
   }
 
-  async onchange (data) {
-    Object.assign(this, data)
-    if (this.cache) {
-      this.filename = await this.cache.put(this.projectName + '/' + this.title, this.value)
-      console.log('put in cache:', this.filename)
+  _onsetup () {
+    this.hasSetup = true
+    if (this.toAdd.length) {
+      this.toAdd.forEach(data => this.addSubEditor(data))
+      this.toAdd = []
     }
+    this.onsetup?.()
   }
 
-  onhistory (history) {
+  async _onchange (data) {
+    Object.assign(this, data)
+    Object.assign(this.data, data)
+    // if (this.cache) {
+    //   this.filename = await this.cache.put(this.title, this.value)
+    //   console.log('put in cache:', this.filename)
+    // }
+    this.onchange?.(data)
+  }
+
+  _onhistory (history) {
     this.history = history
   }
 
-  onfocus () {
+  _onfocus (editor) {
+    this.focusedEditor = editor
+    this.onfocus?.(editor)
   }
 
-  onselection ({ text }) {
+  _onselection ({ text }) {
     if (textarea) {
       if (text.length) {
         textarea.select()
@@ -85,12 +113,44 @@ export default class Editor {
     selectionText = text
   }
 
-  onresize () {
+  _onresize () {
+    this.resize() // TODO: is this necessary?
+    this.onresize?.()
+  }
+
+  resize ({ width, height } = {}) {
     this.parent = this.parent ?? this.canvas.parentNode
-    const rect = this.canvas.getBoundingClientRect()
+    let rect = this.canvas.getBoundingClientRect()
     rect.y += window.pageYOffset
     rect.x += window.pageXOffset
     this.rect = rect
+    if ((width || height) && (rect.width !== width || rect.height !== height)) {
+      this.worker
+        .postMessage({
+          call: 'onresize',
+          width: width*pixelRatio,
+          height: height*pixelRatio
+        })
+      this.canvas.style.width = width + 'px'
+      this.canvas.style.height = height + 'px'
+      rect = this.canvas.getBoundingClientRect()
+      rect.y += window.pageYOffset
+      rect.x += window.pageXOffset
+      this.rect = rect
+    }
+  }
+
+  addSubEditor (data) {
+    if (this.hasSetup) {
+      this.worker
+        .postMessage({
+          call: 'addSubEditor',
+          ...this.data,
+          ...data,
+        })
+    } else {
+      this.toAdd.push(data)
+    }
   }
 
   handleEvent (type, eventName, e = {}) {
@@ -104,15 +164,21 @@ export default class Editor {
     }
 
     if ((data.ctrlKey || data.metaKey) && data.key === 'm') {
+      // TODO: completely hacky way to remove the textarea while
+      // there is title change
+      methods.events.setTarget('hover', null, new MouseEvent('mouseout'))
       e.preventDefault()
-      ask('Change name', `Type a new name for "${this.title}"`, this.title).then(async (result) => {
+      ask('Change name', `Type a new name for "${this.focusedEditor.title}"`,
+        this.focusedEditor.title).then(async (result) => {
         if (!result) return
-        this.title = result.value
+        if (this.id === this.focusedEditor.id) {
+          this.title = result.value
+        }
         this.worker
           .postMessage({
             call: 'renameEditor',
-            id: this.id,
-            title: this.title
+            id: this.focusedEditor.id,
+            title: result.value
           })
       })
       return false
@@ -121,6 +187,8 @@ export default class Editor {
     this.worker.postMessage({ call: eventName, ...data })
   }
 }
+
+const methods = {}
 
 export const registerEvents = (parent) => {
   textarea = document.createElement('textarea')

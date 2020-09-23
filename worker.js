@@ -285,6 +285,7 @@ class Editor {
     // } else {
     //   this.draw()
     // }
+    if (!controlEditor) this.postMessage({ call: 'onsetup' })
   }
 
   async addSubEditor (data) {
@@ -295,8 +296,21 @@ class Editor {
       editor.updateSizes(true)
       editor.updateText()
     })
-    await editor.setup(this.canvas, this)
+    await editor.setup({
+      ...data,
+      outerCanvas: this.canvas.outer,
+      pixelRatio: this.canvas.pixelRatio,
+      height: 1
+    }, this)
     this.subEditors.push(editor)
+    this.updateSizes(true)
+    this.updateText()
+    this.draw()
+  }
+
+  setTitle (title) {
+    this.title = title
+    this.updateTitle()
     this.updateSizes(true)
     this.updateText()
     this.draw()
@@ -305,10 +319,12 @@ class Editor {
   renameEditor ({ id, title }) {
     if (id === this.id) {
       this.title = title
+      this.updateTitle()
     } else {
-      this.subEditors
+      const subEditor = this.subEditors
         .find(editor => editor.id === id)
-        .title = title
+      subEditor.title = title
+      subEditor.updateTitle()
     }
     this.updateSizes(true)
     this.updateText()
@@ -1394,8 +1410,8 @@ class Editor {
       this.drawCaret()
       this.drawBlock()
     }
-    if (this.isVisible) this.drawTitle()
-    // this.subEditors.forEach(editor => editor.isVisible && editor.drawTitle())
+    if (!this.isSubEditor && this.isVisible) this.drawTitle()
+    this.subEditors.forEach(editor => editor.isVisible && editor.drawTitle())
     if (!this.isSubEditor) this.drawVertScrollbar()
     this.drawText()
     this.drawGutter()
