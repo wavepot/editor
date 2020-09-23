@@ -302,8 +302,8 @@ export const registerEvents = (parent) => {
   }
 
   const targetHandler = (e, type) => {
-    if (ignore) return
-    let _target = null
+    // if (ignore) return
+    let _target = emptyTarget
     for (const target of Object.values(editors)) {
       if (events.isWithin(e, target)) {
         _target = target
@@ -313,12 +313,18 @@ export const registerEvents = (parent) => {
     events.setTarget(type, _target, e)
   }
 
-  const events = {
+  const rect = parent.getBoundingClientRect()
+  const emptyTarget = {
+    rect,
+    parent,
+    handleEvent () {}
+  }
+
+  const events = methods.events = {
     ignore: false,
     targets: {},
     setTarget (type, target, e) {
       const previous = this.targets[type]
-
       let noBlur = false
 
       // enable overlayed items to handle their own events
@@ -327,6 +333,7 @@ export const registerEvents = (parent) => {
       && e.target !== textarea
       && e.target !== target.canvas
       && e.target !== target.parent
+      && (target !== emptyTarget && events.targets.hover !== emptyTarget)
       ) {
         target = null
         type = 'hover'
@@ -354,7 +361,8 @@ export const registerEvents = (parent) => {
         }
       }
     },
-    isWithin (e, { rect, parent }) {
+    isWithin (e, { isVisible, rect, parent }) {
+      if (!isVisible) return
       let { left, top, right, bottom } = rect
       left -= parent.scrollLeft //+ window.pageXOffset
       right -= parent.scrollLeft //+ window.pageXOffset
