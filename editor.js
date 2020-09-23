@@ -207,16 +207,32 @@ export const registerEvents = (parent) => {
   textarea.spellchecking = 'off'
   textarea.value = 0
 
-  document.body.appendChild(textarea)
+  const createUndoRedo = methods.createUndoRedo = () => {
+    // create undo/redo capability
+    ignore = true
+    textarea.focus()
+    textarea.select()
+    document.execCommand('insertText', false, 1)
+    textarea.select()
+    document.execCommand('insertText', false, 2)
+    document.execCommand('undo', false)
+    textarea.selectionStart = -1
+    textarea.selectionEnd = -1
+    ignore = false
+  }
 
-  // create undo/redo capability
-  textarea.select()
-  document.execCommand('insertText', false, 1)
-  textarea.select()
-  document.execCommand('insertText', false, 2)
-  document.execCommand('undo', false)
-  textarea.selectionStart = -1
-  textarea.selectionEnd = -1
+  const removeUndoRedo = methods.removeUndoRedo = () => {
+    // remove undo/redo capability
+    ignore = true
+    textarea.focus()
+    textarea.select()
+    document.execCommand('undo', false)
+    // document.execCommand('undo', false)
+    // document.execCommand('undo', false)
+    textarea.selectionStart = -1
+    textarea.selectionEnd = -1
+    // ignore = false
+  }
 
   textarea.oncut = e => {
     e.preventDefault()
@@ -450,63 +466,29 @@ const eventHandlers = {
       return
     }
     if (eventName === 'onfocus') {
-  //     console.log('on focus', editor.id)
-
-  //     if (!editor.history) return
-
-  //     ignore = true
-
-  //     textarea.focus()
-  //     textarea.select()
-
-  //     document.execCommand('undo', false)
-  //     document.execCommand('undo', false)
-  // console.log('here')
-  //     textarea.select()
-  //     if (editor.history.needle > 1) {
-  //       document.execCommand('insertText', false, editor.history.needle)
-  //     }
-  //     if (editor.history.needle < editor.history.log.length) {
-  //       document.execCommand('insertText', false, editor.history.needle)
-  //       document.execCommand('undo', false)
-  //     }
-  //     console.log('focus...')
-
-  //     ignore = false
-
-
-      // return
-      // ignore = true
-      // textarea.focus()
-      // textarea.select()
-      // document.execCommand('insertText', false, 1)
-      // ignore = false
-      // return
-      // removeTextArea()
-      // createTextArea(e)
-      // updateHistory()
     }
     if (eventName === 'onblur') {
-      // undoCurrentHistory()
-      // removeTextArea()
-      // return
     }
     if (eventName === 'onresize') {
-      // app.updateSizes()
-      return {
-        width: editor.width * pixelRatio,
-        height: editor.height * pixelRatio
-      }
+      return
+      // return {
+      //   width: editor.width * pixelRatio,
+      //   height: editor.height * pixelRatio
+      // }
     }
     return {/* todo */}
   },
   mouse (e, eventName, editor) {
     if (textarea) {
       if (eventName === 'onmouseenter') {
+        document.body.appendChild(textarea)
+        methods.createUndoRedo()
         textarea.style.pointerEvents = 'all'
         textarea.focus()
       } else if (eventName === 'onmouseout') {
         textarea.style.pointerEvents = 'none'
+        methods.removeUndoRedo()
+        document.body.removeChild(textarea)
         textarea.blur()
       }
     }
