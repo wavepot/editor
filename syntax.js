@@ -8,16 +8,17 @@ var NewLine = R(['newline'], 'g')
 var syntax = Regexp.join([
   'newline',
   // 'comment',
-  // 'operator',
-  // 'symbol',
+  ['number', R(['special', 'number'], '')],
+  'operator',
+  'symbol',
   // 'params',
   'attribute',
   // 'keyword',
   ['variable', R(['variable','call'], '')],
-  ['keyword', R(['operator'])],
+  'keyword',
+  // ['keyword', R(['operator'])],
   // 'string',
   'definition',
-  ['number', R(['special', 'number'], '')],
 ], 'gm')
 
 var Indent = {
@@ -58,7 +59,7 @@ export default function Syntax(o) {
 Syntax.prototype.entities = entities;
 
 Syntax.prototype.highlight = function(code, offset) {
-  code += '\n\n*/`\n\n'
+  code += '*/`'
 
   // code = this.createIndents(code);
   code = this.createBlocks(code);
@@ -85,7 +86,7 @@ Syntax.prototype.highlight = function(code, offset) {
   // code = this.restoreBlocks(code);
   // code = code.replace(Indent.regexp, Indent.replacer);
 
-  return pieces
+  return pieces.slice(0,-2)
 };
 
 Syntax.prototype.createIndents = function(code) {
@@ -168,7 +169,7 @@ Syntax.prototype.createBlocks = function(code) {
     piece = Object.entries(match.groups).filter(([key, value]) => value !== undefined)[0]
     piece.push(match.index)
     this.blocks.push(piece)
-    parts.push('\uffee' + ','.repeat(piece[1].length - 1))
+    parts.push('\uffee' + ' '.repeat(piece[1].length - 1))
     lastPos = match.index + piece[1].length
   }
 

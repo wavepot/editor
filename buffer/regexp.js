@@ -41,8 +41,8 @@ Regexp.types = {
   'variable': /\b(Object|Function|Boolean|Error|EvalError|InternalError|RangeError|ReferenceError|StopIteration|SyntaxError|TypeError|URIError|Number|Math|Date|String|RegExp|Array|Float32Array|Float64Array|Int16Array|Int32Array|Int8Array|Uint16Array|Uint32Array|Uint8Array|Uint8ClampedArray|ArrayBuffer|DataView|JSON|Intl|arguments|console|window|document|Symbol|Set|Map|WeakSet|WeakMap|Proxy|Reflect|Promise)\b/,
   'special': /\b(true|false|null|undefined)\b/,
   'params': /function[ \(]{1}[^]*?\{/,
-  'number': /-?\b(0x[\dA-Fa-f]+|\d*\.?\d+([Ee][+-]?\d+)?|NaN|-?Infinity)\b/,
-  'symbol': /[{}[\](),:]/,
+  'number': /-?(0x[\dA-Fa-f]+|\d*\.?\d+([Ee][+-]?\d+)?|NaN|-?Infinity)\b/,
+  'symbol': /[{}[\]:,.]/,
   'call': /\b(\w+)(?=\()/,
   'definition': /\bthis\b/,
 
