@@ -55,19 +55,9 @@ export default class PseudoWorker {
   constructor () {
     this.editor = new Editor()
     this.editor.postMessage = data => this.onmessage({ data })
-  }
-
-  setupFonts () {
-    const fontFace = new FontFace(
-      'Space Mono',
-      `local('Space Mono'),
-       local('SpaceMono-Regular'),
-       url('/fonts/SpaceMono-Regular.woff2') format('woff2')`,
-    )
-
-    document.fonts.add(fontFace)
-
-    fontFace.load().then(() => this.onmessage({ data: { call: 'onready' } }))
+    setTimeout(() => {
+      this.onmessage({ data: { call: 'onready' } })
+    })
   }
 
   postMessage (data) {
@@ -114,7 +104,7 @@ class Editor {
         this[key] = (...args) => {
           Error.captureStackTrace(err)
           const parts = err.stack.split('\n').slice(0, 3).pop().trim().split(' ')
-          console.log((key + `(${JSON.stringify(args[0] ?? '')})`).padEnd(30), parts[1].padEnd(20), parts[2].split(':').slice(-2)[0])
+          console.log((key + `(${JSON.stringify(args[0] ?? '')})`).padEnd(30), parts[1]?.padEnd(20), parts[2]?.split(':')?.slice(-2)[0])
           return method.call(this, ...args)
         }
       })
@@ -135,7 +125,9 @@ class Editor {
 
     this.id = data.id ?? this.id
     this.title = data.title ?? this.title
+    this.extraTitle = data.extraTitle ?? ''
     this.value = data.value ?? this.value
+    this.font = data.font
     this.fontSize = data.fontSize ?? this.fontSize
     this.autoResize = data.autoResize ?? this.autoResize
 
@@ -155,6 +147,20 @@ class Editor {
     })
 
     this.pos = pos
+
+    if (!controlEditor) {
+      const fontFace = new FontFace(
+        'mono',
+        `local('mono'),
+         url('${this.font}') format('woff2')`,
+      )
+      if (isWorker) {
+        self.fonts.add(fontFace)
+      } else {
+        document.fonts.add(fontFace)
+      }
+      await fontFace.load()
+    }
 
     this.canvas = { pos, width, height, pixelRatio, padding: data.padding ?? 3 }
     this.canvas.outer = this.canvas.outerCanvas = data.outerCanvas
@@ -184,12 +190,11 @@ class Editor {
     this.char.height =
       (this.char.metrics.actualBoundingBoxDescent
       - this.char.metrics.actualBoundingBoxAscent)
-      * 1.12
+      * 1.15 //.96 //1.68
     // this.char.metrics.emHeightDescent
-
     this.gutter = { padding: 3, width: 0, height: 0 }
 
-    this.line = { padding: 1.9 }
+    this.line = { padding: 0 }
     this.line.height = this.char.height + this.line.padding
 
     this.char.px = {
@@ -205,10 +210,10 @@ class Editor {
 
     this.tabSize = 2
 
-    this.titlebar = { height: this.char.px.height + 2.5 }
+    this.titlebar = { height: data.titlebarHeight ??  this.char.px.height + 2.5 }
     this.canvas.title.height = this.titlebar.height
 
-    this.scrollbar = { width: 10 }
+    this.scrollbar = { width: 6 }
     this.scrollbar.margin = Math.ceil(this.scrollbar.width / 2)
     this.scrollbar.view = { width: 0, height: this.canvas.height - this.titlebar.height }
     this.scrollbar.area = { width: 0, height: 0 }
@@ -776,7 +781,7 @@ class Editor {
     let left = this.canvas.gutter.width
     let top = this.titlebar.height
     let right = (left + (this.view.width - this.scrollbar.width - this.char.px.width))
-    let bottom = (top + (this.view.height - this.scrollbar.width - this.char.px.height - this.caret.height * this.canvas.pixelRatio))
+    let bottom = this.view.height - this.char.px.height
 
     // if (centered) {
     //   left = right / 2
@@ -921,27 +926,37 @@ class Editor {
       this.gutter.width = this.gutter.size * this.char.width + this.gutter.padding
 
       this.canvas.text.height =
-        (this.canvas.padding * this.canvas.pixelRatio)
-      + ((1 + this.sizes.loc) * this.line.height)
-      * this.canvas.pixelRatio
+        (this.canvas.padding * this.canvas.pixelRatio) * 2
+      + ((1 + this.sizes.loc) * this.char.px.height)// line.height)
+      // * this.canvas.pixelRatio
 
       if (!isWorker && this.autoResize && !this.isSubEditor) {
-        this.view.height = this.canvas.height = this.canvas.outer.height = this.canvas.text.height + this.titlebar.height + this.canvas.padding * this.canvas.pixelRatio
+        this.view.height
+          = this.canvas.height
+          = this.canvas.outer.height
+          = this.canvas.text.height
+          + this.titlebar.height
+          + this.canvas.padding * this.canvas.pixelRatio
         this.page.lines = Math.floor(this.view.height / this.char.px.height)
         this.canvas.outer.style.height = (this.canvas.outer.height/this.canvas.pixelRatio) + 'px'
         this.postMessage({ call: 'onresize' })
       }
 
       this.subEditorsHeight =
-        (this.subEditors.reduce((p, n) => p + n.canvas.text.height, 0)
-      + this.titlebar.height * this.subEditors.length)
+        (this.subEditors.reduce((p, n) => p + n.canvas.text.height + this.titlebar.height, 0))
 
-      this.canvas.scroll.height =
+      this.canvas.scroll.height = Math.floor(
         this.subEditorsHeight
       + (!isWorker && this.autoResize
       ? 0
-      : this.canvas.text.height
-      - this.char.px.height - this.line.padding)
+      : this.canvas.text.height)
+      - (this.canvas.padding
+      + this.caret.height
+      - this.line.padding)
+      * this.canvas.pixelRatio)
+      + 4 // TODO: this shouldn't be needed
+
+      // + (this.subEditors.length - 2)
 
       this.canvas.gutter.width =
         (this.gutter.width + this.canvas.padding)
@@ -1033,7 +1048,7 @@ class Editor {
 
   applyFont (ctx) {
     ctx.textBaseline = 'top'
-    ctx.font = `normal ${this.fontSize} Space Mono`
+    ctx.font = `normal ${this.fontSize} mono`
   }
 
   updateGutter () {
@@ -1145,13 +1160,13 @@ class Editor {
       this.canvas.title.height
     )
     this.applyFont(this.ctx.title)
-    this.ctx.title.font = `normal ${parseFloat(this.fontSize)-1.5}pt Space Mono`
+    this.ctx.title.font = `normal 7.4pt mono`
     this.ctx.title.scale(this.canvas.pixelRatio, this.canvas.pixelRatio)
     this.ctx.title.fillStyle = theme.title
     this.ctx.title.fillText(
-      this.title,
-      5,
-      2.5
+      (this.extraTitle ?? '') + this.title,
+      7,
+      5.4
     )
     this.ctx.title.restore()
   }
@@ -1991,7 +2006,8 @@ class Editor {
       if (hasFocus) {
         this.postMessage({
           call: 'onfocus',
-          id: editor.id
+          id: editor.id,
+          title: editor.title
         })
       }
     }
@@ -2027,25 +2043,20 @@ class Editor {
   onresize ({ width, height }) {
     this.canvas.width = this.canvas.outer.width = width
     this.canvas.height = this.canvas.outer.height = height
+    this.subEditors.forEach(editor => {
+      editor.canvas.width = editor.canvas.outer.width = width
+      editor.canvas.height = editor.canvas.outer.height = height
+      editor.updateSizes(true)
+      editor.updateText()
+    })
     this.updateSizes(true)
     this.updateText()
-    this.draw()
+    this.drawSync()
   }
 }
 
 if (isWorker) {
-  const fontFace = new FontFace(
-    'Space Mono',
-    `local('Space Mono'),
-     local('SpaceMono-Regular'),
-     url('./fonts/SpaceMono-Regular.woff2') format('woff2')`,
-  )
-
-  self.fonts.add(fontFace)
-
-  fontFace.load().then(() => {
-    const editor = new Editor()
-    onmessage = ({ data }) => editor[data.call](data)
-    postMessage({ call: 'onready' })
-  })
+  const editor = new Editor()
+  onmessage = ({ data }) => editor[data.call](data)
+  postMessage({ call: 'onready' })
 }
