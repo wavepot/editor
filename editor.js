@@ -8,7 +8,7 @@ let selectionText = ''
 let textarea
 
 export const editors = {}
-
+let ii = 0
 export default class Editor {
   constructor (data) {
     this.data = data
@@ -22,13 +22,14 @@ export default class Editor {
     this.focusedEditor = this
 
     this.canvas = document.createElement('canvas')
+    this.canvas.className = 'editor'
     this.canvas.width = data.width * pixelRatio
     this.canvas.height = data.height * pixelRatio
     this.canvas.style.width = data.width + 'px'
     this.canvas.style.height = data.height + 'px'
 
     if (!this.pseudoWorker) {
-      const workerUrl = new URL('worker.js', import.meta.url).href
+      const workerUrl = new URL('editor-worker.js', import.meta.url).href
       this.worker = new Worker(workerUrl, { type: 'module' })
       this.worker.onerror = error => this._onerror(error)
       this.worker.onmessage = ({ data }) => this['_' + data.call](data)
@@ -38,16 +39,29 @@ export default class Editor {
   }
 
   async setupPseudoWorker () {
-    const PseudoWorker = await import(new URL('worker.js', import.meta.url))
+    const PseudoWorker = await import(new URL('editor-worker.js', import.meta.url))
     this.worker = new PseudoWorker()
     this.worker.onerror = error => this._onerror(error)
     this.worker.onmessage = ({ data }) => this['_' + data.call](data)
+  }
+
+  setColor (color) {
+    this.worker.postMessage({ call: 'setColor', color })
+  }
+
+  setEditorById (id) {
+    this.worker.postMessage({ call: 'setEditorById', id })
   }
 
   destroy () {
     delete editors[this.id]
     this.worker.terminate()
     this.canvas.parentNode.removeChild(this.canvas)
+    this.ondestroy?.()
+  }
+
+  _onblockcomment () {
+    this.onblockcomment?.()
   }
 
   _onerror (error) {
@@ -71,6 +85,9 @@ export default class Editor {
       pixelRatio,
     }, [outerCanvas])
     this.onready?.()
+    // this.stream = this.canvas.captureStream(15)
+    // this.videoTrack = this.stream.getVideoTracks()[0]
+    // this.videoTrack.requestFrame()
   }
 
   _onsetup () {
@@ -80,6 +97,22 @@ export default class Editor {
       this.toAdd = []
     }
     this.onsetup?.()
+  }
+
+  focus () {
+    this.handleEvent('mouse', 'click')
+    this._onfocus()
+  }
+
+  update (fn) {
+    this.onupdate = fn
+    this.worker.postMessage({ call: 'update' })
+  }
+
+  _onupdate (data) {
+    Object.assign(this, data)
+    Object.assign(this.data, data)
+    this.onupdate?.(data)
   }
 
   async _onchange (data) {
@@ -92,9 +125,26 @@ export default class Editor {
     this.onchange?.(data)
   }
 
-  _onhistory (history) {
-    this.history = history
+  _ondraw () {
+    // this.videoTrack.requestFrame()
   }
+
+  _onrename (data) {
+    this.focusedEditor = data
+    this.onrename?.(data)
+  }
+
+  _onadd (data) {
+    this.onadd?.(data)
+  }
+
+  _onremove (data) {
+    this.onremove?.(data)
+  }
+
+  // _onhistory (history) {
+  //   this.history = history
+  // }
 
   _onfocus (editor) {
     this.focusedEditor = editor
@@ -144,13 +194,17 @@ export default class Editor {
     if (this.hasSetup) {
       this.worker
         .postMessage({
-          call: 'addSubEditor',
           ...this.data,
           ...data,
+          call: 'addSubEditor',
         })
     } else {
       this.toAdd.push(data)
     }
+  }
+
+  _onimagebitmap ({ imageBitmap }) {
+    this.imageBitmap = imageBitmap
   }
 
   handleEvent (type, eventName, e = {}) {
@@ -163,25 +217,48 @@ export default class Editor {
       e.stopPropagation?.()
     }
 
-    if ((data.ctrlKey || data.metaKey) && data.key === 'm') {
-      // TODO: completely hacky way to remove the textarea while
-      // there is title change
-      methods.events.setTarget('hover', null, new MouseEvent('mouseout'))
-      e.preventDefault()
-      ask('Change name', `Type a new name for "${this.focusedEditor.title}"`,
-        this.focusedEditor.title).then(async (result) => {
-        if (!result) return
-        if (this.id === this.focusedEditor.id) {
-          this.title = result.value
-        }
-        this.worker
-          .postMessage({
-            call: 'renameEditor',
-            id: this.focusedEditor.id,
-            title: result.value
+    if (eventName === 'onkeydown') {
+      // remove editor
+      if (data.cmdKey && data.key === 'b') {
+        const { title } = this.focusedEditor
+        if (confirm('Are you sure you want to delete ' + title + '?')) {
+          this.worker.postMessage({
+            call: 'deleteEditor',
+            id: this.focusedEditor.id
           })
-      })
-      return false
+        }
+      }
+
+      // add editor
+      if (data.cmdKey && data.key === 'u') {
+        e.preventDefault()
+        this.ontoadd?.() // ontoadd because onadd is fired from when editor is added
+        return false
+      }
+
+      // rename editor
+      if (data.cmdKey && data.key === 'm') {
+        // TODO: completely hacky way to remove the textarea while
+        // there is title change
+        methods.events.setTarget('hover', null, new MouseEvent('mouseout'))
+        e.preventDefault()
+        ask('Change name', `Type a new name for "${this.focusedEditor.title}"`,
+          this.focusedEditor.title).then(async (result) => {
+          if (!result) return
+          // if (this.id === this.focusedEditor.id) {
+          //   const oldTitle = this.title
+          //   this.title = result.value
+          //   // this.onrename?.(oldTitle, this.title)
+          // }
+          this.worker
+            .postMessage({
+              call: 'renameEditor',
+              id: this.focusedEditor.id,
+              title: result.value
+            })
+        })
+        return false
+      }
     }
 
     this.worker.postMessage({ call: eventName, ...data })
@@ -193,6 +270,7 @@ const methods = {}
 export const registerEvents = (parent) => {
   textarea = document.createElement('textarea')
   textarea.style.position = 'fixed'
+  textarea.style.zIndex = 100
   // textarea.style.left = (e.clientX ?? e.pageX) + 'px'
   // textarea.style.top = (e.clientY ?? e.pageY) + 'px'
   textarea.style.width = '100px'
@@ -202,37 +280,38 @@ export const registerEvents = (parent) => {
   textarea.style.opacity = 0
   textarea.style.visibility = 'none'
   textarea.style.resize = 'none'
+  textarea.style.cursor = 'default'
   textarea.autocapitalize = 'none'
   textarea.autocomplete = 'off'
   textarea.spellchecking = 'off'
   textarea.value = 0
 
-  const createUndoRedo = methods.createUndoRedo = () => {
-    // create undo/redo capability
-    ignore = true
-    textarea.focus()
-    textarea.select()
-    document.execCommand('insertText', false, 1)
-    textarea.select()
-    document.execCommand('insertText', false, 2)
-    document.execCommand('undo', false)
-    textarea.selectionStart = -1
-    textarea.selectionEnd = -1
-    ignore = false
-  }
+  // const createUndoRedo = methods.createUndoRedo = () => {
+  //   // create undo/redo capability
+  //   ignore = true
+  //   textarea.focus()
+  //   textarea.select()
+  //   document.execCommand('insertText', false, 1)
+  //   textarea.select()
+  //   document.execCommand('insertText', false, 2)
+  //   document.execCommand('undo', false)
+  //   textarea.selectionStart = -1
+  //   textarea.selectionEnd = -1
+  //   ignore = false
+  // }
 
-  const removeUndoRedo = methods.removeUndoRedo = () => {
-    // remove undo/redo capability
-    ignore = true
-    textarea.focus()
-    textarea.select()
-    document.execCommand('undo', false)
-    // document.execCommand('undo', false)
-    // document.execCommand('undo', false)
-    textarea.selectionStart = -1
-    textarea.selectionEnd = -1
-    // ignore = false
-  }
+  // const removeUndoRedo = methods.removeUndoRedo = () => {
+  //   // remove undo/redo capability
+  //   ignore = true
+  //   textarea.focus()
+  //   textarea.select()
+  //   document.execCommand('undo', false)
+  //   // document.execCommand('undo', false)
+  //   // document.execCommand('undo', false)
+  //   textarea.selectionStart = -1
+  //   textarea.selectionEnd = -1
+  //   // ignore = false
+  // }
 
   textarea.oncut = e => {
     e.preventDefault()
@@ -254,52 +333,52 @@ export const registerEvents = (parent) => {
     events.targets?.focus?.worker.postMessage({ call: 'onpaste', text })
   }
 
-  textarea.oninput = e => {
-    if (ignore) return
+  // textarea.oninput = e => {
+  //   if (ignore) return
+  //   ignore = true
+  //   const editor = events.targets.focus
+  //   const needle = +textarea.value
 
-    ignore = true
-    const editor = events.targets.focus
-    const needle = +textarea.value
-    if (needle === 0) { // is undo
-      document.execCommand('redo', false)
-      if (editor?.history) {
-        if (editor.history.needle > 1) {
-          editor.history.needle--
-          editor.worker.postMessage({
-            call: 'onhistory',
-            needle: editor.history.needle
-          })
-        }
-      }
-    } else if (needle === 2) { // is redo
-      document.execCommand('undo', false)
-      if (editor?.history) {
-        if (editor.history.needle < editor.history.log.length) {
-          editor.history.needle++
-          editor.worker.postMessage({
-            call: 'onhistory',
-            needle: editor.history.needle
-          })
-        }
-      }
-    }
-    ignore = false
-    // if (needle !== history.needle) {
-    //   if (needle >= 1) {
-    //     history.needle = needle
-    //     textarea.selectionStart = -1
-    //     textarea.selectionEnd = -1
-    //     events.targets?.focus?.postMessage({ call: 'onhistory', needle })
-    //     // app.storeHistory(editor, history)
-    //   } else {
-    //     document.execCommand('redo', false)
-    //   }
-    // }
-    // document.execCommand('redo', false)
+  //   if (needle === 0) { // is undo
+  //     document.execCommand('redo', false)
+  //     if (editor?.history) {
+  //       if (editor.history.needle > 1) {
+  //         editor.history.needle--
+  //         editor.worker.postMessage({
+  //           call: 'onhistory',
+  //           needle: editor.history.needle
+  //         })
+  //       }
+  //     }
+  //   } else if (needle === 2) { // is redo
+  //     document.execCommand('undo', false)
+  //     if (editor?.history) {
+  //       if (editor.history.needle < editor.history.log.length) {
+  //         editor.history.needle++
+  //         editor.worker.postMessage({
+  //           call: 'onhistory',
+  //           needle: editor.history.needle
+  //         })
+  //       }
+  //     }
+  //   }
+  //   ignore = false
+  //   // if (needle !== history.needle) {
+  //   //   if (needle >= 1) {
+  //   //     history.needle = needle
+  //   //     textarea.selectionStart = -1
+  //   //     textarea.selectionEnd = -1
+  //   //     events.targets?.focus?.postMessage({ call: 'onhistory', needle })
+  //   //     // app.storeHistory(editor, history)
+  //   //   } else {
+  //   //     document.execCommand('redo', false)
+  //   //   }
+  //   // }
+  //   // document.execCommand('redo', false)
 
-    textarea.selectionStart = -1
-    textarea.selectionEnd = -1
-  }
+  //   textarea.selectionStart = -1
+  //   textarea.selectionEnd = -1
+  // }
 
   const targetHandler = (e, type) => {
     // if (ignore) return
@@ -322,6 +401,7 @@ export const registerEvents = (parent) => {
 
   const events = methods.events = {
     ignore: false,
+    textarea,
     targets: {},
     setTarget (type, target, e) {
       const previous = this.targets[type]
@@ -490,12 +570,12 @@ const eventHandlers = {
     if (textarea) {
       if (eventName === 'onmouseenter') {
         document.body.appendChild(textarea)
-        methods.createUndoRedo()
+        // methods.createUndoRedo()
         textarea.style.pointerEvents = 'all'
         textarea.focus()
       } else if (eventName === 'onmouseout') {
         textarea.style.pointerEvents = 'none'
-        methods.removeUndoRedo()
+        // methods.removeUndoRedo()
         document.body.removeChild(textarea)
         textarea.blur()
       }
@@ -530,8 +610,10 @@ const eventHandlers = {
     } = e
     const cmdKey = isMac ? metaKey : ctrlKey
     if (cmdKey && key === 'r') return false
-    if (cmdKey && key === 'z') return false
-    if (cmdKey && key === 'y') return false
+    if (cmdKey && key === '+') return false
+    if (cmdKey && key === '-') return false
+    // if (cmdKey && key === 'z') return false
+    // if (cmdKey && key === 'y') return false
     if (cmdKey && key === 'c') return false
     if (cmdKey && key === 'x') return false
     if (cmdKey && (key === 'v' || key === 'V')) return false

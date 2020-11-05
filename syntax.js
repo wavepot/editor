@@ -7,7 +7,7 @@ var NewLine = R(['newline'], 'g')
 //NOTE: order matters
 var syntax = Regexp.join([
   'newline',
-  // 'comment',
+  'comment',
   ['number', R(['special', 'number'], '')],
   'operator',
   'symbol',
@@ -34,7 +34,7 @@ var Blocks = Regexp.join([
   // ['definition', R(['arguments']), '^'],
   ['property', R(['declare'])],
   ['keyword', R(['keyword'])],
-  ['number', R(['string'])],
+  ['string', R(['string'])],
   // 'regexp',
 ], 'gm');
 
@@ -59,7 +59,7 @@ export default function Syntax(o) {
 Syntax.prototype.entities = entities;
 
 Syntax.prototype.highlight = function(code, offset) {
-  code += '*/`'
+  code += '\n`*/\n'
 
   // code = this.createIndents(code);
   code = this.createBlocks(code);
@@ -85,8 +85,9 @@ Syntax.prototype.highlight = function(code, offset) {
 
   // code = this.restoreBlocks(code);
   // code = code.replace(Indent.regexp, Indent.replacer);
-
-  return pieces.slice(0,-2)
+  pieces.pop()
+  while (pieces.pop()[0] !== 'newline') {} // whoa
+  return pieces
 };
 
 Syntax.prototype.createIndents = function(code) {

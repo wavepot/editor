@@ -86,7 +86,7 @@ History.prototype.redo = function (needle) {
 
   if (needle < 1) return
 
-  this.lastNeedle = this.needle = needle
+  this.lastNeedle = this.needle = Math.min(needle, this.log.length)
   return this.checkout('redo', needle - 1)
 }
 
